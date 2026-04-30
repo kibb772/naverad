@@ -1,14 +1,14 @@
 {
   "name": "naverad-worker",
   "version": "1.0.0",
+  "private": true,
   "scripts": {
-    "start": "node --require ts-node/register sync-worker.ts",
-    "build": "tsc --outDir dist",
-    "start:prod": "node dist/sync-worker.js"
+    "start": "npx ts-node --skip-project sync-worker.ts"
   },
   "dependencies": {
-    "@prisma/client": "^5.22.0",
-    "ts-node": "^10.9.2",
-    "typescript": "^5.0.0"
+    "@prisma/client": "5.22.0",
+    "prisma": "5.22.0",
+    "ts-node": "10.9.2",
+    "typescript": "5.4.5"
   }
 }
