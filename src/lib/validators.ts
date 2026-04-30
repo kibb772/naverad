@@ -4,7 +4,7 @@ export const signupSchema = z.object({
   email: z.string().email('유효한 이메일을 입력해주세요'),
   password: z.string().min(8, '비밀번호는 8자 이상이어야 합니다'),
   name: z.string().min(1, '이름을 입력해주세요').max(50),
-  phone: z.string().regex(/^01[0-9]-?\d{3,4}-?\d{4}$/, '유효한 전화번호를 입력해주세요').optional(),
+  phone: z.string().regex(/^01[0-9]-?\d{3,4}-?\d{4}$/, '유효한 전화번호를 입력해주세요').optional().or(z.literal('')),
 });
 
 export const loginSchema = z.object({
