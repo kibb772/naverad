@@ -138,6 +138,11 @@ export function startScheduler() {
     runDailySync().catch(console.error);
   }, 10000);
 
+  // 초기 수집 (syncing 상태 계정) - 15초 후 시작
+  setTimeout(() => {
+    runInitialSync().catch(console.error);
+  }, 15000);
+
   // 매일 새벽 6시에 실행
   const scheduleNext = () => {
     const now = new Date();
@@ -155,4 +160,66 @@ export function startScheduler() {
   };
 
   scheduleNext();
+
+  // 5분마다 syncing 계정 확인
+  setInterval(() => {
+    runInitialSync().catch(console.error);
+  }, 5 * 60 * 1000);
+}
+
+async function runInitialSync() {
+  const accounts = await prisma.naverAdsAccount.findMany({ where: { syncStatus: 'syncing' } });
+  if (accounts.length === 0) return;
+
+  console.log(`[InitialSync] syncing 계정 ${accounts.length}개 발견`);
+
+  for (const account of accounts) {
+    // 90일치 날짜 중 미수집 날짜 찾기
+    const allDates: string[] = [];
+    for (let i = 1; i <= 90; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      allDates.push(d.toISOString().slice(0, 10));
+    }
+
+    const existingLogs = await prisma.syncLog.findMany({
+      where: { accountId: account.id, date: { gte: new Date(allDates[allDates.length - 1]) } },
+      select: { date: true },
+    });
+    const existingDates = new Set(existingLogs.map((l) => l.date.toISOString().slice(0, 10)));
+    const pendingDates = allDates.filter((d) => !existingDates.has(d));
+
+    if (pendingDates.length === 0) {
+      await prisma.naverAdsAccount.update({
+        where: { id: account.id },
+        data: { isActive: true, syncStatus: 'ready', lastSyncAt: new Date() },
+      });
+      console.log(`[InitialSync] ${account.accountName}: 완료!`);
+      continue;
+    }
+
+    console.log(`[InitialSync] ${account.accountName}: ${pendingDates.length}일 남음`);
+
+    // 하루치씩 수집
+    for (const date of pendingDates) {
+      try {
+        console.log(`[InitialSync] ${account.accountName}: ${date} 수집 중...`);
+        await syncAccountData({
+          id: account.id,
+          apiKey: account.apiKey,
+          secretKey: account.secretKey,
+          customerId: account.customerId,
+        }, date);
+        console.log(`[InitialSync] ${account.accountName}: ${date} 완료`);
+      } catch (e) {
+        console.error(`[InitialSync] ${account.accountName}: ${date} 실패`, e);
+      }
+    }
+
+    await prisma.naverAdsAccount.update({
+      where: { id: account.id },
+      data: { isActive: true, syncStatus: 'ready', lastSyncAt: new Date() },
+    });
+    console.log(`[InitialSync] ${account.accountName}: 전체 완료!`);
+  }
 }
