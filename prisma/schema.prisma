@@ -1,0 +1,208 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  passwordHash  String?
+  name          String
+  phone         String?
+  kakaoId       String?   @unique
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  naverAdsAccounts NaverAdsAccount[]
+  alerts           Alert[]
+  notificationSettings NotificationSetting?
+}
+
+model NaverAdsAccount {
+  id            String   @id @default(cuid())
+  userId        String
+  apiKey        String
+  secretKey     String
+  customerId    String
+  isActive      Boolean  @default(true)
+  lastSyncAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  campaigns  Campaign[]
+
+  @@index([userId])
+}
+
+model Campaign {
+  id              String   @id @default(cuid())
+  accountId       String
+  naverCampaignId String
+  name            String
+  status          String   @default("ACTIVE")
+  dailyBudget     Int      @default(0)
+  campaignType    String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  account   NaverAdsAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  adGroups  AdGroup[]
+  metrics   DailyMetric[]
+
+  @@index([accountId])
+}
+
+model AdGroup {
+  id              String   @id @default(cuid())
+  campaignId      String
+  naverAdGroupId  String
+  name            String
+  status          String   @default("ACTIVE")
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  campaign  Campaign  @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  keywords  Keyword[]
+  metrics   DailyMetric[]
+
+  @@index([campaignId])
+}
+
+model Keyword {
+  id              String   @id @default(cuid())
+  adGroupId       String
+  naverKeywordId  String
+  text            String
+  matchType       String   @default("EXACT")
+  bidAmount       Int      @default(0)
+  status          String   @default("ACTIVE")
+  qualityIndex    Int?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  adGroup  AdGroup       @relation(fields: [adGroupId], references: [id], onDelete: Cascade)
+  metrics  DailyMetric[]
+
+  @@index([adGroupId])
+}
+
+model DailyMetric {
+  id          String   @id @default(cuid())
+  entityType  String
+  entityId    String
+  date        DateTime
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  ctr         Float    @default(0)
+  cpc         Float    @default(0)
+  conversions Int      @default(0)
+  cost        Int      @default(0)
+  roas        Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+  campaignId String?
+  adGroup    AdGroup?  @relation(fields: [adGroupId], references: [id])
+  adGroupId  String?
+  keyword    Keyword?  @relation(fields: [keywordId], references: [id])
+  keywordId  String?
+
+  @@unique([entityType, entityId, date])
+  @@index([entityType, entityId])
+  @@index([date])
+}
+
+model Alert {
+  id        String   @id @default(cuid())
+  userId    String
+  type      String
+  severity  String
+  title     String
+  message   String
+  metric    String?
+  value     Float?
+  threshold Float?
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  user      User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  diagnosis AIDiagnosis?
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model AIDiagnosis {
+  id             String   @id @default(cuid())
+  alertId        String   @unique
+  causesJson     String
+  suggestionsJson String
+  summary        String?
+  createdAt      DateTime @default(now())
+
+  alert Alert @relation(fields: [alertId], references: [id], onDelete: Cascade)
+}
+
+model NotificationSetting {
+  id                String  @id @default(cuid())
+  userId            String  @unique
+  dashboardEnabled  Boolean @default(true)
+  emailEnabled      Boolean @default(true)
+  kakaoEnabled      Boolean @default(false)
+  alertSeverityMin  String  @default("WARNING")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model ActionLog {
+  id         String   @id @default(cuid())
+  userId     String
+  action     String
+  entityType String
+  entityId   String
+  details    String?
+  createdAt  DateTime @default(now())
+
+  @@index([userId])
+  @@index([createdAt])
+}
+
+model KeywordDailyStat {
+  id          String   @id @default(cuid())
+  accountId   String
+  campaignId  String
+  campaignName String
+  adGroupId   String
+  adGroupName String
+  keywordId   String
+  keywordText String
+  date        DateTime
+  impressions Int      @default(0)
+  clicks      Int      @default(0)
+  cost        Int      @default(0)
+  cpc         Int      @default(0)
+  ctr         Float    @default(0)
+  createdAt   DateTime @default(now())
+
+  @@unique([keywordId, date])
+  @@index([accountId, date])
+  @@index([date])
+  @@index([keywordId])
+}
+
+model SyncLog {
+  id        String   @id @default(cuid())
+  accountId String
+  date      DateTime
+  status    String   @default("SUCCESS")
+  keywordCount Int   @default(0)
+  createdAt DateTime @default(now())
+
+  @@unique([accountId, date])
+  @@index([accountId])
+}
