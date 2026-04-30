@@ -3,10 +3,10 @@ RUN apk add --no-cache openssl
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npm ci
 
 COPY prisma ./prisma
-RUN npx prisma generate
+RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
 
 COPY src/services ./src/services
 COPY worker/sync-worker.ts ./sync-worker.ts
