@@ -39,42 +39,64 @@ export default function SettingsPage() {
         return;
       }
 
+      const newAccountId = `acc-${Date.now()}`;
+
+      const newAccountId = `acc-${Date.now()}`;
+      const savedApiKey = form.apiKey;
+      const savedSecretKey = form.secretKey;
+      const savedCustomerId = form.customerId;
+
       addAccount({
-        id: `acc-${Date.now()}`,
+        id: newAccountId,
         accountName: form.accountName || data.accountName || `네이버 광고 (${form.customerId})`,
-        customerId: form.customerId,
-        apiKey: form.apiKey,
-        secretKey: form.secretKey,
+        customerId: savedCustomerId,
+        apiKey: savedApiKey,
+        secretKey: savedSecretKey,
         isActive: false,
         syncStatus: 'syncing',
         syncProgress: 0,
         connectedAt: new Date().toISOString(),
         campaigns: data.campaigns || [],
       });
-
-      const newAccountId = `acc-${Date.now()}`;
       setForm({ accountName: '', apiKey: '', secretKey: '', customerId: '' });
-      setMessage('계정이 연동되었습니다. 최근 90일치 데이터를 수집하는 중입니다... (시간이 걸릴 수 있습니다)');
+      setMessage('계정이 연동되었습니다. 최근 90일치 데이터를 수집하는 중입니다...');
 
-      // 백그라운드에서 90일치 초기 수집 시작
-      fetch('/api/naver/initial-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: form.apiKey,
-          secretKey: form.secretKey,
-          customerId: form.customerId,
-          accountId: newAccountId,
-        }),
-      }).then(async (r) => {
-        const result = await r.json();
-        if (result.ready) {
-          updateAccount(newAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
-          setMessage(`✅ 연동 완료! ${result.syncedDays || 90}일치 데이터 준비됨`);
+      // 90일치 날짜 목록 생성 (어제부터 90일 전까지)
+      const dates: string[] = [];
+      for (let i = 1; i <= 90; i++) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        dates.push(d.toISOString().slice(0, 10));
+      }
+
+      // 하루씩 순서대로 수집
+      let synced = 0;
+      for (let idx = 0; idx < dates.length; idx++) {
+        const date = dates[idx];
+        try {
+          const r = await fetch('/api/naver/initial-sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKey: savedApiKey,
+              secretKey: savedSecretKey,
+              customerId: savedCustomerId,
+              accountId: newAccountId,
+              date,
+            }),
+          });
+          const result = await r.json();
+          if (!result.skipped && r.ok) synced++;
+          const progress = Math.round(((idx + 1) / dates.length) * 100);
+          updateAccount(newAccountId, { syncProgress: progress });
+          setMessage(`데이터 수집 중... ${idx + 1}/${dates.length}일 (${date})`);
+        } catch {
+          // 하루 실패해도 계속 진행
         }
-      }).catch(() => {
-        updateAccount(newAccountId, { syncStatus: 'pending' });
-      });
+      }
+
+      updateAccount(newAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+      setMessage(`✅ 연동 완료! ${synced}일치 데이터 준비됨`);
     } catch {
       setMessage('서버 오류가 발생했습니다.');
     }
