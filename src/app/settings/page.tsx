@@ -40,8 +40,6 @@ export default function SettingsPage() {
       }
 
       const newAccountId = `acc-${Date.now()}`;
-
-      const newAccountId = `acc-${Date.now()}`;
       const savedApiKey = form.apiKey;
       const savedSecretKey = form.secretKey;
       const savedCustomerId = form.customerId;
