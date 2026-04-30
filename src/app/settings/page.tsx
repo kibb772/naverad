@@ -175,7 +175,7 @@ export default function SettingsPage() {
                         data-testid={`budget-goal-${a.id}`}
                       />
                     </div>
-                    {a.dailyBudgetGoal && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({(a.dailyBudgetGoal / 10000).toFixed(0)}만원/일)</span>}
+                    {a.dailyBudgetGoal && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({a.dailyBudgetGoal >= 10000 ? `${(a.dailyBudgetGoal / 10000).toFixed(1).replace(/\.0$/, '')}만원` : `${a.dailyBudgetGoal.toLocaleString()}원`}/일)</span>}
                   </div>
                 </div>
               ))}
