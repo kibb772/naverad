@@ -9,7 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "prisma generate"
+    "postinstall": "node -e \"if(process.env.SKIP_POSTINSTALL!=='1'){require('child_process').execSync('prisma generate',{stdio:'inherit'})}\"" 
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",

@@ -6,7 +6,7 @@ RUN apk add --no-cache libc6-compat openssl
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN SKIP_POSTINSTALL=1 npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
