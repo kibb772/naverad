@@ -72,44 +72,23 @@ export default function SettingsPage() {
         campaigns: data.campaigns || [],
       });
       setForm({ accountName: '', apiKey: '', secretKey: '', customerId: '' });
-      setMessage('계정이 연동되었습니다. 최근 90일치 데이터를 수집하는 중입니다...');
+      setMessage('계정이 연동되었습니다. 서버에서 90일치 데이터를 수집하는 중입니다. 창을 닫아도 됩니다.');
 
-      // 90일치 날짜 목록 생성 (어제부터 90일 전까지)
-      const dates: string[] = [];
-      for (let i = 1; i <= 90; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        dates.push(d.toISOString().slice(0, 10));
-      }
-
-      // 하루씩 순서대로 수집
-      let synced = 0;
-      for (let idx = 0; idx < dates.length; idx++) {
-        const date = dates[idx];
-        try {
-          const r = await fetch('/api/naver/initial-sync', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              apiKey: savedApiKey,
-              secretKey: savedSecretKey,
-              customerId: savedCustomerId,
-              accountId: dbAccountId,
-              date,
-            }),
-          });
-          const result = await r.json();
-          if (!result.skipped && r.ok) synced++;
-          const progress = Math.round(((idx + 1) / dates.length) * 100);
-          updateAccount(dbAccountId, { syncProgress: progress });
-          setMessage(`데이터 수집 중... ${idx + 1}/${dates.length}일 (${date})`);
-        } catch {
-          // 하루 실패해도 계속 진행
-        }
-      }
-
-      updateAccount(dbAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
-      setMessage(`✅ 연동 완료! ${synced}일치 데이터 준비됨`);
+      // 백그라운드 수집 시작 (한 번만 호출)
+      fetch('/api/naver/initial-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: savedApiKey,
+          secretKey: savedSecretKey,
+          customerId: savedCustomerId,
+          accountId: dbAccountId,
+        }),
+      }).then(() => {
+        setMessage('✅ 수집이 시작되었습니다. 완료되면 "연동 완료" 상태로 바뀝니다.');
+      }).catch(() => {
+        setMessage('수집 시작 중 오류가 발생했습니다.');
+      });
     } catch {
       setMessage('서버 오류가 발생했습니다.');
     }
