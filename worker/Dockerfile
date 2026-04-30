@@ -2,6 +2,7 @@ FROM node:20-alpine
 RUN apk add --no-cache openssl
 WORKDIR /app
 
+# cache bust: 2
 COPY package.json package-lock.json ./
 # postinstall(prisma generate) 스킵하고 설치
 RUN npm ci --ignore-scripts
