@@ -2,13 +2,14 @@ FROM node:20-alpine
 RUN apk add --no-cache openssl
 WORKDIR /app
 
+# 환경변수 미리 설정해서 prisma generate 성공하게
+ENV DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy"
+
 COPY package.json package-lock.json ./
-# postinstall 제거 후 설치
-RUN node -e "const p=require('./package.json'); delete p.scripts.postinstall; require('fs').writeFileSync('./package.json', JSON.stringify(p, null, 2))"
 RUN npm ci
 
 COPY prisma ./prisma
-RUN DATABASE_URL="postgresql://dummy:dummy@localhost:5432/dummy" npx prisma generate
+RUN npx prisma generate
 
 COPY src/services ./src/services
 COPY worker/sync-worker.ts ./sync-worker.ts
