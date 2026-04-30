@@ -43,10 +43,25 @@ export default function SettingsPage() {
       const savedApiKey = form.apiKey;
       const savedSecretKey = form.secretKey;
       const savedCustomerId = form.customerId;
+      const savedAccountName = form.accountName || data.accountName || `네이버 광고 (${form.customerId})`;
+
+      // DB에 계정 저장
+      const accountRes = await fetch('/api/accounts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          accountName: savedAccountName,
+          apiKey: savedApiKey,
+          secretKey: savedSecretKey,
+          customerId: savedCustomerId,
+        }),
+      });
+      const accountData = await accountRes.json();
+      const dbAccountId = accountData.id || newAccountId;
 
       addAccount({
-        id: newAccountId,
-        accountName: form.accountName || data.accountName || `네이버 광고 (${form.customerId})`,
+        id: dbAccountId,
+        accountName: savedAccountName,
         customerId: savedCustomerId,
         apiKey: savedApiKey,
         secretKey: savedSecretKey,
@@ -79,21 +94,21 @@ export default function SettingsPage() {
               apiKey: savedApiKey,
               secretKey: savedSecretKey,
               customerId: savedCustomerId,
-              accountId: newAccountId,
+              accountId: dbAccountId,
               date,
             }),
           });
           const result = await r.json();
           if (!result.skipped && r.ok) synced++;
           const progress = Math.round(((idx + 1) / dates.length) * 100);
-          updateAccount(newAccountId, { syncProgress: progress });
+          updateAccount(dbAccountId, { syncProgress: progress });
           setMessage(`데이터 수집 중... ${idx + 1}/${dates.length}일 (${date})`);
         } catch {
           // 하루 실패해도 계속 진행
         }
       }
 
-      updateAccount(newAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+      updateAccount(dbAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
       setMessage(`✅ 연동 완료! ${synced}일치 데이터 준비됨`);
     } catch {
       setMessage('서버 오류가 발생했습니다.');

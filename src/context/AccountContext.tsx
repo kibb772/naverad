@@ -1,6 +1,7 @@
 'use client';
 
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { useSession } from 'next-auth/react';
 
 export interface LinkedAccount {
   id: string;
@@ -11,7 +12,7 @@ export interface LinkedAccount {
   dailyBudgetGoal?: number;
   isActive: boolean;
   syncStatus: 'pending' | 'syncing' | 'ready';
-  syncProgress?: number; // 0~100
+  syncProgress?: number;
   connectedAt: string;
   campaigns?: {
     naverCampaignId: string;
@@ -29,35 +30,55 @@ interface AccountContextType {
   updateAccount: (id: string, updates: Partial<LinkedAccount>) => void;
   selectedAccountId: string | null;
   setSelectedAccountId: (id: string | null) => void;
+  loading: boolean;
 }
 
 const AccountContext = createContext<AccountContextType | null>(null);
 
 export function AccountProvider({ children }: { children: ReactNode }) {
+  const { data: session, status } = useSession();
   const [accounts, setAccounts] = useState<LinkedAccount[]>([]);
   const [selectedAccountId, setSelectedAccountId] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
 
-  // localStorage에서 복원
+  // 로그인 시 DB에서 계정 목록 불러오기
   useEffect(() => {
-    const saved = localStorage.getItem('linked-accounts');
-    if (saved) {
-      const parsed = JSON.parse(saved) as LinkedAccount[];
-      setAccounts(parsed);
-      if (parsed.length > 0) setSelectedAccountId(parsed[0].id);
+    if (status === 'authenticated') {
+      fetch('/api/accounts')
+        .then((r) => r.json())
+        .then((data) => {
+          if (Array.isArray(data)) {
+            const mapped: LinkedAccount[] = data.map((a) => ({
+              id: a.id,
+              accountName: a.accountName,
+              customerId: a.customerId,
+              apiKey: a.apiKey,
+              secretKey: a.secretKey,
+              dailyBudgetGoal: a.dailyBudgetGoal ?? undefined,
+              isActive: a.isActive,
+              syncStatus: (a.syncStatus as 'pending' | 'syncing' | 'ready') || 'pending',
+              connectedAt: a.createdAt,
+              campaigns: [],
+            }));
+            setAccounts(mapped);
+            if (mapped.length > 0) setSelectedAccountId(mapped[0].id);
+          }
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    } else if (status === 'unauthenticated') {
+      setAccounts([]);
+      setLoading(false);
     }
-  }, []);
-
-  // localStorage에 저장
-  useEffect(() => {
-    localStorage.setItem('linked-accounts', JSON.stringify(accounts));
-  }, [accounts]);
+  }, [status]);
 
   const addAccount = (account: LinkedAccount) => {
     setAccounts((prev) => [...prev, account]);
     if (!selectedAccountId) setSelectedAccountId(account.id);
   };
 
-  const removeAccount = (id: string) => {
+  const removeAccount = async (id: string) => {
+    await fetch(`/api/accounts?id=${id}`, { method: 'DELETE' });
     setAccounts((prev) => prev.filter((a) => a.id !== id));
     if (selectedAccountId === id) {
       const remaining = accounts.filter((a) => a.id !== id);
@@ -65,12 +86,25 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const updateAccount = (id: string, updates: Partial<LinkedAccount>) => {
+  const updateAccount = async (id: string, updates: Partial<LinkedAccount>) => {
     setAccounts((prev) => prev.map((a) => a.id === id ? { ...a, ...updates } : a));
+    // DB에도 저장 (syncStatus, dailyBudgetGoal, isActive만)
+    const dbUpdates: Record<string, unknown> = { id };
+    if (updates.syncStatus !== undefined) dbUpdates.syncStatus = updates.syncStatus;
+    if (updates.dailyBudgetGoal !== undefined) dbUpdates.dailyBudgetGoal = updates.dailyBudgetGoal;
+    if (updates.isActive !== undefined) dbUpdates.isActive = updates.isActive;
+
+    if (Object.keys(dbUpdates).length > 1) {
+      await fetch('/api/accounts', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dbUpdates),
+      }).catch(() => {});
+    }
   };
 
   return (
-    <AccountContext.Provider value={{ accounts, addAccount, removeAccount, updateAccount, selectedAccountId, setSelectedAccountId }}>
+    <AccountContext.Provider value={{ accounts, addAccount, removeAccount, updateAccount, selectedAccountId, setSelectedAccountId, loading }}>
       {children}
     </AccountContext.Provider>
   );

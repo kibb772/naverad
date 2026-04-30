@@ -23,15 +23,18 @@ model User {
 }
 
 model NaverAdsAccount {
-  id            String   @id @default(cuid())
-  userId        String
-  apiKey        String
-  secretKey     String
-  customerId    String
-  isActive      Boolean  @default(true)
-  lastSyncAt    DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id              String   @id @default(cuid())
+  userId          String
+  accountName     String   @default("")
+  apiKey          String
+  secretKey       String
+  customerId      String
+  isActive        Boolean  @default(true)
+  dailyBudgetGoal Int?
+  syncStatus      String   @default("pending")
+  lastSyncAt      DateTime?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
   campaigns  Campaign[]
