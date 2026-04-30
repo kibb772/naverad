@@ -86,10 +86,7 @@ export default function SettingsPage() {
       <aside style={{ width: '240px', background: 'white', borderRight: '1px solid var(--border)', padding: '1.5rem 1rem', flexShrink: 0 }}>
         <h1 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>🔥 열끈</h1>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-          <Link href="/dashboard" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem' }}>📊 대시보드</Link>
-          <Link href="/campaigns" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem' }}>🎛️ 캠페인 관리</Link>
-          <Link href="/reports" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem' }}>📋 AI 리포트</Link>
-          <Link href="/alerts" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem' }}>🔔 알림</Link>
+          <Link href="/dashboard" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>📊 대시보드</Link>
           <Link href="/settings" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 600, background: 'var(--bg)', color: 'var(--primary)' }}>🔗 계정 연동</Link>
         </nav>
       </aside>
