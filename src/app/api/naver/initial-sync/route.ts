@@ -2,50 +2,45 @@ import { NextRequest, NextResponse } from 'next/server';
 import { NaverAdsService } from '@/services/naver-ads.service';
 import prisma from '@/lib/prisma';
 
-// 하루치 수집 후 다음 날짜를 스스로 호출하는 방식
+// 한 번 호출에 하루치만 처리하고 완료 여부 반환
+// 프론트에서 완료될 때까지 반복 호출
 export async function POST(req: NextRequest) {
   try {
-    const { apiKey, secretKey, customerId, accountId, dates } = await req.json();
+    const { apiKey, secretKey, customerId, accountId } = await req.json();
 
     if (!apiKey || !secretKey || !customerId || !accountId) {
       return NextResponse.json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 });
     }
 
-    // dates가 없으면 최초 호출 - 90일치 날짜 생성
-    let pendingDates: string[] = dates;
-    if (!pendingDates) {
-      const allDates: string[] = [];
-      for (let i = 1; i <= 90; i++) {
-        const d = new Date();
-        d.setDate(d.getDate() - i);
-        allDates.push(d.toISOString().slice(0, 10));
-      }
-      // 이미 수집된 날짜 제외
-      const existingLogs = await prisma.syncLog.findMany({
-        where: { accountId, date: { gte: new Date(allDates[allDates.length - 1]) } },
-        select: { date: true },
-      });
-      const existingDates = new Set(existingLogs.map((l) => l.date.toISOString().slice(0, 10)));
-      pendingDates = allDates.filter((d) => !existingDates.has(d));
+    // 수집 안 된 날짜 중 가장 최근 날짜 1개만 처리
+    const allDates: string[] = [];
+    for (let i = 1; i <= 90; i++) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      allDates.push(d.toISOString().slice(0, 10));
     }
 
+    const existingLogs = await prisma.syncLog.findMany({
+      where: { accountId, date: { gte: new Date(allDates[allDates.length - 1]) } },
+      select: { date: true },
+    });
+    const existingDates = new Set(existingLogs.map((l) => l.date.toISOString().slice(0, 10)));
+    const pendingDates = allDates.filter((d) => !existingDates.has(d));
+
     if (pendingDates.length === 0) {
-      // 모두 완료 - DB 상태 업데이트
+      // 모두 완료
       await prisma.naverAdsAccount.update({
         where: { id: accountId },
         data: { isActive: true, syncStatus: 'ready', lastSyncAt: new Date() },
       });
-      return NextResponse.json({ done: true, message: '90일치 수집 완료' });
+      return NextResponse.json({ done: true, remaining: 0 });
     }
 
-    // 첫 번째 날짜 수집
     const syncDate = pendingDates[0];
-    const remainingDates = pendingDates.slice(1);
 
     const naverAds = new NaverAdsService({ apiKey, secretKey, customerId });
     const fields = ['impCnt', 'clkCnt', 'salesAmt'];
 
-    // 캠페인 → 광고그룹 → 키워드 목록
     const campResult = await naverAds.getCampaigns();
     if (campResult.success && Array.isArray(campResult.data)) {
       const allKeywords: { kwId: string; kwText: string; campId: string; campName: string; agId: string; agName: string }[] = [];
@@ -108,19 +103,10 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 다음 날짜 호출 (자기 자신을 재귀 호출)
-    const host = req.headers.get('host') || 'localhost:3000';
-    const protocol = host.includes('localhost') ? 'http' : 'https';
-    fetch(`${protocol}://${host}/api/naver/initial-sync`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ apiKey, secretKey, customerId, accountId, dates: remainingDates }),
-    }).catch(() => {});
-
     return NextResponse.json({
-      message: `${syncDate} 수집 완료. 남은 날짜: ${remainingDates.length}일`,
-      remaining: remainingDates.length,
       done: false,
+      remaining: pendingDates.length - 1,
+      syncedDate: syncDate,
     });
   } catch (error) {
     console.error('Initial sync error:', error);

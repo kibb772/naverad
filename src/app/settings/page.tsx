@@ -72,23 +72,40 @@ export default function SettingsPage() {
         campaigns: data.campaigns || [],
       });
       setForm({ accountName: '', apiKey: '', secretKey: '', customerId: '' });
-      setMessage('계정이 연동되었습니다. 서버에서 90일치 데이터를 수집하는 중입니다. 창을 닫아도 됩니다.');
+      setMessage('계정이 연동되었습니다. 90일치 데이터를 수집하는 중입니다...');
 
-      // 백그라운드 수집 시작 (한 번만 호출)
-      fetch('/api/naver/initial-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          apiKey: savedApiKey,
-          secretKey: savedSecretKey,
-          customerId: savedCustomerId,
-          accountId: dbAccountId,
-        }),
-      }).then(() => {
-        setMessage('✅ 수집이 시작되었습니다. 완료되면 "연동 완료" 상태로 바뀝니다.');
-      }).catch(() => {
-        setMessage('수집 시작 중 오류가 발생했습니다.');
-      });
+      // 완료될 때까지 반복 호출 (하루치씩)
+      const runSync = async () => {
+        let remaining = 90;
+        while (remaining > 0) {
+          try {
+            const r = await fetch('/api/naver/initial-sync', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                apiKey: savedApiKey,
+                secretKey: savedSecretKey,
+                customerId: savedCustomerId,
+                accountId: dbAccountId,
+              }),
+            });
+            const result = await r.json();
+            if (result.done) {
+              updateAccount(dbAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+              setMessage('✅ 연동 완료! 90일치 데이터 준비됨');
+              break;
+            }
+            remaining = result.remaining ?? remaining - 1;
+            const progress = Math.round(((90 - remaining) / 90) * 100);
+            updateAccount(dbAccountId, { syncProgress: progress });
+            setMessage(`데이터 수집 중... ${90 - remaining}/90일 완료`);
+          } catch {
+            // 에러 나도 계속 시도
+            await new Promise((res) => setTimeout(res, 3000));
+          }
+        }
+      };
+      runSync();
     } catch {
       setMessage('서버 오류가 발생했습니다.');
     }
