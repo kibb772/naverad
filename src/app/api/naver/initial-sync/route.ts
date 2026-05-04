@@ -42,6 +42,7 @@ export async function POST(req: NextRequest) {
     const fields = ['impCnt', 'clkCnt', 'salesAmt'];
 
     const campResult = await naverAds.getCampaigns();
+    console.log(`[InitialSync] getCampaigns result: success=${campResult.success}, count=${Array.isArray(campResult.data) ? campResult.data.length : 'N/A'}`);
     if (campResult.success && Array.isArray(campResult.data)) {
       const allKeywords: { kwId: string; kwText: string; campId: string; campName: string; agId: string; agName: string }[] = [];
 
@@ -49,12 +50,19 @@ export async function POST(req: NextRequest) {
         const campId = (camp.nccCampaignId || camp.campaignId) as string;
         const campName = camp.name as string;
         const agResult = await naverAds.getAdGroups(campId);
-        if (!agResult.success || !Array.isArray(agResult.data)) continue;
+        if (!agResult.success || !Array.isArray(agResult.data)) {
+          console.log(`[InitialSync] getAdGroups failed for campaign ${campName}(${campId}): ${agResult.error || 'not array'}`);
+          continue;
+        }
+        console.log(`[InitialSync] campaign ${campName}: ${agResult.data.length}개 광고그룹`);
         for (const ag of agResult.data as Record<string, unknown>[]) {
           const agId = (ag.nccAdgroupId || ag.adgroupId) as string;
           const agName = ag.name as string;
           const kwResult = await naverAds.getKeywords(agId);
-          if (!kwResult.success || !Array.isArray(kwResult.data)) continue;
+          if (!kwResult.success || !Array.isArray(kwResult.data)) {
+            console.log(`[InitialSync] getKeywords failed for adGroup ${agName}(${agId}): ${kwResult.error || 'not array'}`);
+            continue;
+          }
           for (const kw of kwResult.data as Record<string, unknown>[]) {
             allKeywords.push({
               kwId: (kw.nccKeywordId || kw.keywordId) as string,
@@ -64,6 +72,7 @@ export async function POST(req: NextRequest) {
           }
         }
       }
+      console.log(`[InitialSync] ${syncDate}: 총 키워드 ${allKeywords.length}개 수집됨`);
 
       const timeRange = { since: syncDate, until: syncDate };
       const BATCH = 20;
