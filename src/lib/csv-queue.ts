@@ -91,10 +91,11 @@ async function processCSV(accountId: string, text: string) {
 
   console.log(`[CSV Queue] ${accountId}: ${rows.length}행 파싱 완료, DB 저장 시작`);
 
-  // 2. 기존 CSV 데이터 삭제 (csv- 접두사로 구분)
-  await prisma.keywordDailyStat.deleteMany({
-    where: { accountId, keywordId: { startsWith: 'csv-' } },
+  // 2. 기존 CSV 데이터 삭제 (같은 keywordId+date 조합이 다른 accountId로 존재할 수 있으므로 csv- 접두사 전체 삭제)
+  const deleted = await prisma.keywordDailyStat.deleteMany({
+    where: { keywordId: { startsWith: 'csv-' } },
   });
+  console.log(`[CSV Queue] ${accountId}: 기존 CSV 데이터 ${deleted.count}행 삭제`);
 
   // 3. bulk insert (createMany — DB 1번 호출)
   const BATCH = 1000;
@@ -104,7 +105,6 @@ async function processCSV(accountId: string, text: string) {
     try {
       const result = await prisma.keywordDailyStat.createMany({
         data: batchData,
-        skipDuplicates: true,
       });
       totalInserted += result.count;
       console.log(`[CSV Queue] ${accountId}: batch ${i}~${i + batchData.length}, inserted=${result.count}`);
