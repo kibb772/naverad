@@ -46,6 +46,11 @@ export async function POST(req: NextRequest) {
 
     console.log(`[Keywords Cached] accountId=${accountId}, since=${sinceDate.toISOString()}, until=${untilDate.toISOString()}, keywords=${keywords.length}, syncDays=${syncLogs.length}`);
 
+    // 디버그: 해당 계정의 전체 KeywordDailyStat 개수 확인
+    const totalRows = await prisma.keywordDailyStat.count({ where: { accountId } });
+    const csvRows = await prisma.keywordDailyStat.count({ where: { accountId, keywordId: { startsWith: 'csv-' } } });
+    console.log(`[Keywords Cached] DB 확인: accountId=${accountId}, 전체=${totalRows}행, CSV=${csvRows}행`);
+
     return NextResponse.json({
       keywords: keywords.slice(0, 30),
       totalKeywords: keywords.length,
