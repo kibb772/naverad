@@ -96,11 +96,20 @@ export async function POST(req: NextRequest) {
         }
       }
 
-      await prisma.syncLog.upsert({
-        where: { accountId_date: { accountId, date: new Date(syncDate) } },
-        update: { status: 'SUCCESS', keywordCount: allKeywords.length },
-        create: { accountId, date: new Date(syncDate), status: 'SUCCESS', keywordCount: allKeywords.length },
-      });
+      try {
+        await prisma.syncLog.upsert({
+          where: { accountId_date: { accountId, date: new Date(syncDate) } },
+          update: { status: 'SUCCESS', keywordCount: allKeywords.length },
+          create: { accountId, date: new Date(syncDate), status: 'SUCCESS', keywordCount: allKeywords.length },
+        });
+      } catch (logError: unknown) {
+        // P2002 unique constraint 에러는 이미 기록된 것이므로 무시
+        if (logError instanceof Error && 'code' in logError && (logError as { code: string }).code === 'P2002') {
+          console.log(`[InitialSync] syncLog already exists for ${syncDate}, skipping`);
+        } else {
+          throw logError;
+        }
+      }
     }
 
     return NextResponse.json({
