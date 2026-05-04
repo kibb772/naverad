@@ -12,11 +12,12 @@ let processing = false;
 export function enqueueCSV(accountId: string, text: string) {
   queue.push({ accountId, text, addedAt: new Date() });
   console.log(`[CSV Queue] 작업 추가: ${accountId}, 대기 ${queue.length}개`);
-  processQueue();
+  processCSVQueue();
 }
 
-async function processQueue() {
+export async function processCSVQueue() {
   if (processing) return;
+  if (queue.length === 0) return;
   processing = true;
 
   while (queue.length > 0) {

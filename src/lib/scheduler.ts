@@ -1,5 +1,6 @@
 import prisma from './prisma';
 import { NaverAdsService } from '@/services/naver-ads.service';
+import { processCSVQueue } from './csv-queue';
 
 let schedulerStarted = false;
 
@@ -134,6 +135,11 @@ export function startScheduler() {
   schedulerStarted = true;
 
   console.log('[Scheduler] 스케줄러 시작됨');
+
+  // CSV 큐 처리 시작 (10초마다 확인)
+  setInterval(() => {
+    processCSVQueue();
+  }, 10000);
 
   // 서버 시작 시 즉시 한 번 실행 (10초 후)
   setTimeout(() => {
