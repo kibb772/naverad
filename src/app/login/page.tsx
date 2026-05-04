@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { signIn } from 'next-auth/react';
 import Link from 'next/link';
 
 export default function LoginPage() {
@@ -15,20 +16,17 @@ export default function LoginPage() {
     setError('');
 
     try {
-      const res = await fetch('/api/auth/login', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+      const result = await signIn('credentials', {
+        email,
+        password,
+        redirect: false,
       });
 
-      if (!res.ok) {
-        const data = await res.json();
-        setError(data.error || '로그인에 실패했습니다.');
+      if (result?.error) {
+        setError('이메일 또는 비밀번호가 올바르지 않습니다.');
         return;
       }
 
-      const data = await res.json();
-      localStorage.setItem('user', JSON.stringify(data.user));
       window.location.href = '/dashboard';
     } catch {
       setError('서버 오류가 발생했습니다.');
