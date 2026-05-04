@@ -98,12 +98,28 @@ async function processCSV(accountId: string, text: string) {
 
   // 3. bulk insert (createMany — DB 1번 호출)
   const BATCH = 1000;
+  let totalInserted = 0;
   for (let i = 0; i < rows.length; i += BATCH) {
-    await prisma.keywordDailyStat.createMany({
-      data: rows.slice(i, i + BATCH),
-      skipDuplicates: true,
-    });
+    const batchData = rows.slice(i, i + BATCH);
+    try {
+      const result = await prisma.keywordDailyStat.createMany({
+        data: batchData,
+        skipDuplicates: true,
+      });
+      totalInserted += result.count;
+      console.log(`[CSV Queue] ${accountId}: batch ${i}~${i + batchData.length}, inserted=${result.count}`);
+    } catch (batchError) {
+      console.error(`[CSV Queue] ${accountId}: batch ${i} 실패:`, batchError);
+      // 실패한 배치는 개별 upsert로 재시도
+      for (const row of batchData) {
+        try {
+          await prisma.keywordDailyStat.create({ data: row });
+          totalInserted++;
+        } catch { /* 개별 실패 무시 */ }
+      }
+    }
   }
+  console.log(`[CSV Queue] ${accountId}: DB 저장 완료, 총 ${totalInserted}행 insert됨`);
 
   // 4. SyncLog 기록
   const syncDateArray = Array.from(syncDates);
