@@ -44,6 +44,8 @@ export async function POST(req: NextRequest) {
       orderBy: { date: 'desc' },
     });
 
+    console.log(`[Keywords Cached] accountId=${accountId}, since=${sinceDate.toISOString()}, until=${untilDate.toISOString()}, keywords=${keywords.length}, syncDays=${syncLogs.length}`);
+
     return NextResponse.json({
       keywords: keywords.slice(0, 30),
       totalKeywords: keywords.length,
