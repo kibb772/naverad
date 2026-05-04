@@ -114,12 +114,16 @@ export default function SettingsPage() {
 
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
-      <aside style={{ width: '240px', background: 'white', borderRight: '1px solid var(--border)', padding: '1.5rem 1rem', flexShrink: 0 }}>
+      <aside style={{ width: '240px', background: 'white', borderRight: '1px solid var(--border)', padding: '1.5rem 1rem', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>🔥 열끈</h1>
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
           <Link href="/dashboard" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>📊 대시보드</Link>
           <Link href="/settings" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 600, background: 'var(--bg)', color: 'var(--primary)' }}>🔗 계정 연동</Link>
         </nav>
+        <button onClick={() => { import('next-auth/react').then(m => m.signOut({ callbackUrl: '/login' })); }}
+          style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', textAlign: 'left' }}>
+          🚪 로그아웃
+        </button>
       </aside>
       <main style={{ flex: 1, padding: '2rem', background: 'var(--bg)' }}>
         <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1.5rem' }}>계정 연동</h2>
