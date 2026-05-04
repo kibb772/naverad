@@ -47,8 +47,8 @@ export async function POST(req: NextRequest) {
       apiKey,
       secretKey,
       customerId,
-      isActive: false,
-      syncStatus: 'syncing',
+      isActive: true,
+      syncStatus: 'ready',
     },
   });
 

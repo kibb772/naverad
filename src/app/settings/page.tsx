@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import Link from 'next/link';
 import { useAccounts } from '@/context/AccountContext';
 
@@ -9,6 +9,12 @@ export default function SettingsPage() {
   const [form, setForm] = useState({ accountName: '', apiKey: '', secretKey: '', customerId: '' });
   const [loading, setLoading] = useState(false);
   const [message, setMessage] = useState('');
+
+  // CSV 업로드 상태
+  const [uploadingAccountId, setUploadingAccountId] = useState<string | null>(null);
+  const [uploadMessage, setUploadMessage] = useState<Record<string, string>>({});
+  const [dragging, setDragging] = useState<string | null>(null);
+  const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +26,6 @@ export default function SettingsPage() {
     setMessage('');
 
     try {
-      // 실제 네이버 API 호출하여 계정 검증 + 캠페인 가져오기
       const res = await fetch('/api/naver/verify', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -39,77 +44,84 @@ export default function SettingsPage() {
         return;
       }
 
-      const newAccountId = `acc-${Date.now()}`;
-      const savedApiKey = form.apiKey;
-      const savedSecretKey = form.secretKey;
-      const savedCustomerId = form.customerId;
       const savedAccountName = form.accountName || data.accountName || `네이버 광고 (${form.customerId})`;
 
-      // DB에 계정 저장
       const accountRes = await fetch('/api/accounts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           accountName: savedAccountName,
-          apiKey: savedApiKey,
-          secretKey: savedSecretKey,
-          customerId: savedCustomerId,
+          apiKey: form.apiKey,
+          secretKey: form.secretKey,
+          customerId: form.customerId,
         }),
       });
       const accountData = await accountRes.json();
-      const dbAccountId = accountData.id || newAccountId;
+      const dbAccountId = accountData.id || `acc-${Date.now()}`;
 
       addAccount({
         id: dbAccountId,
         accountName: savedAccountName,
-        customerId: savedCustomerId,
-        apiKey: savedApiKey,
-        secretKey: savedSecretKey,
-        isActive: false,
-        syncStatus: 'syncing',
-        syncProgress: 0,
+        customerId: form.customerId,
+        apiKey: form.apiKey,
+        secretKey: form.secretKey,
+        isActive: true,
+        syncStatus: 'ready',
+        syncProgress: 100,
         connectedAt: new Date().toISOString(),
         campaigns: data.campaigns || [],
       });
       setForm({ accountName: '', apiKey: '', secretKey: '', customerId: '' });
-      setMessage('계정이 연동되었습니다. 90일치 데이터를 수집하는 중입니다...');
-
-      // 완료될 때까지 반복 호출 (하루치씩)
-      const runSync = async () => {
-        let remaining = 90;
-        while (remaining > 0) {
-          try {
-            const r = await fetch('/api/naver/initial-sync', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                apiKey: savedApiKey,
-                secretKey: savedSecretKey,
-                customerId: savedCustomerId,
-                accountId: dbAccountId,
-              }),
-            });
-            const result = await r.json();
-            if (result.done) {
-              updateAccount(dbAccountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
-              setMessage('✅ 연동 완료! 90일치 데이터 준비됨');
-              break;
-            }
-            remaining = result.remaining ?? remaining - 1;
-            const progress = Math.round(((90 - remaining) / 90) * 100);
-            updateAccount(dbAccountId, { syncProgress: progress });
-            setMessage(`데이터 수집 중... ${90 - remaining}/90일 완료`);
-          } catch {
-            // 에러 나도 계속 시도
-            await new Promise((res) => setTimeout(res, 3000));
-          }
-        }
-      };
-      runSync();
+      setMessage('✅ 계정이 연동되었습니다. 아래에서 키워드 보고서 CSV를 업로드하면 과거 데이터를 바로 볼 수 있습니다.');
     } catch {
       setMessage('서버 오류가 발생했습니다.');
     }
     setLoading(false);
+  };
+
+  const handleCSVUpload = async (accountId: string, file: File) => {
+    setUploadingAccountId(accountId);
+    setUploadMessage((prev) => ({ ...prev, [accountId]: '업로드 중...' }));
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('accountId', accountId);
+
+      const res = await fetch('/api/naver/upload-csv', {
+        method: 'POST',
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        setUploadMessage((prev) => ({ ...prev, [accountId]: `❌ ${data.error}` }));
+      } else {
+        setUploadMessage((prev) => ({ ...prev, [accountId]: `✅ ${data.message}` }));
+        updateAccount(accountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+      }
+    } catch {
+      setUploadMessage((prev) => ({ ...prev, [accountId]: '❌ 업로드 중 오류가 발생했습니다.' }));
+    }
+    setUploadingAccountId(null);
+  };
+
+  const handleDrop = (accountId: string, e: React.DragEvent) => {
+    e.preventDefault();
+    setDragging(null);
+    const file = e.dataTransfer.files[0];
+    if (file && (file.name.endsWith('.csv') || file.name.endsWith('.CSV'))) {
+      handleCSVUpload(accountId, file);
+    } else {
+      setUploadMessage((prev) => ({ ...prev, [accountId]: '❌ CSV 파일만 업로드 가능합니다.' }));
+    }
+  };
+
+  const handleFileSelect = (accountId: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleCSVUpload(accountId, file);
+    e.target.value = '';
   };
 
   return (
@@ -131,7 +143,7 @@ export default function SettingsPage() {
         <div className="card" style={{ marginBottom: '2rem' }}>
           <h3 style={{ fontWeight: 600, marginBottom: '0.5rem' }}>네이버 검색광고 계정 연동</h3>
           <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginBottom: '1.25rem' }}>
-            네이버 검색광고 API 키를 입력하면 캠페인 데이터를 자동으로 수집합니다.
+            API 키를 입력해 계정을 연동한 뒤, 키워드 보고서 CSV를 업로드하면 바로 데이터를 확인할 수 있습니다.
           </p>
           <form onSubmit={handleSubmit}>
             {(['accountName', 'apiKey', 'secretKey', 'customerId'] as const).map((field) => (
@@ -145,7 +157,7 @@ export default function SettingsPage() {
                   required={field !== 'accountName'} data-testid={`settings-${field}-input`} autoComplete="off" />
               </div>
             ))}
-            {message && <p style={{ fontSize: '0.875rem', marginBottom: '1rem', color: message.includes('실패') || message.includes('입력') ? 'var(--danger)' : 'var(--success)' }} role="alert">{message}</p>}
+            {message && <p style={{ fontSize: '0.875rem', marginBottom: '1rem', color: message.includes('실패') || message.includes('입력') || message.includes('❌') ? 'var(--danger)' : 'var(--success)' }} role="alert">{message}</p>}
             <button type="submit" className="btn btn-primary" disabled={loading} data-testid="settings-connect-button">
               {loading ? '연동 중...' : '계정 연동'}
             </button>
@@ -170,22 +182,10 @@ export default function SettingsPage() {
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span style={{ fontWeight: 600 }}>{a.accountName}</span>
-                          {(a.syncStatus === 'ready' || (!a.syncStatus && a.isActive)) ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
-                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} />
-                              연동 완료
-                            </span>
-                          ) : a.syncStatus === 'syncing' ? (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
-                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
-                              데이터 수집 중...
-                            </span>
-                          ) : (
-                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#f1f5f9', color: '#64748b' }}>
-                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#94a3b8', display: 'inline-block' }} />
-                              준비 중
-                            </span>
-                          )}
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
+                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} />
+                            연동 완료
+                          </span>
                         </div>
                         <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.125rem' }}>
                           Customer ID: {a.customerId} · 연동일: {new Date(a.connectedAt).toLocaleDateString('ko-KR')}
@@ -196,22 +196,48 @@ export default function SettingsPage() {
                       연동 해제
                     </button>
                   </div>
+
+                  {/* 일 예산 목표 */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
                     <span style={{ fontSize: '0.8125rem', fontWeight: 500, whiteSpace: 'nowrap' }}>일 예산 목표:</span>
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
                       <span style={{ fontSize: '0.8125rem' }}>₩</span>
-                      <input
-                        type="number"
-                        className="input"
-                        style={{ width: '150px', padding: '0.25rem 0.5rem', fontSize: '0.8125rem' }}
-                        value={a.dailyBudgetGoal || ''}
-                        onChange={(e) => updateAccount(a.id, { dailyBudgetGoal: e.target.value ? Number(e.target.value) : undefined })}
-                        placeholder="예: 500000"
-                        data-testid={`budget-goal-${a.id}`}
-                      />
+                      <input type="number" className="input" style={{ width: '150px', padding: '0.25rem 0.5rem', fontSize: '0.8125rem' }}
+                        value={a.dailyBudgetGoal || ''} onChange={(e) => updateAccount(a.id, { dailyBudgetGoal: e.target.value ? Number(e.target.value) : undefined })}
+                        placeholder="예: 500000" data-testid={`budget-goal-${a.id}`} />
                     </div>
                     {a.dailyBudgetGoal && <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>({a.dailyBudgetGoal >= 10000 ? `${(a.dailyBudgetGoal / 10000).toFixed(1).replace(/\.0$/, '')}만원` : `${a.dailyBudgetGoal.toLocaleString()}원`}/일)</span>}
                   </div>
+
+                  {/* CSV 업로드 영역 */}
+                  <div
+                    onDragOver={(e) => { e.preventDefault(); setDragging(a.id); }}
+                    onDragLeave={() => setDragging(null)}
+                    onDrop={(e) => handleDrop(a.id, e)}
+                    onClick={() => fileInputRefs.current[a.id]?.click()}
+                    style={{
+                      marginTop: '0.75rem', padding: '1.25rem', borderRadius: '0.5rem', cursor: 'pointer', textAlign: 'center',
+                      border: `2px dashed ${dragging === a.id ? 'var(--primary)' : 'var(--border)'}`,
+                      background: dragging === a.id ? '#eff6ff' : '#fafafa',
+                      transition: 'all 0.15s',
+                    }}
+                  >
+                    <input type="file" accept=".csv" ref={(el) => { fileInputRefs.current[a.id] = el; }} onChange={(e) => handleFileSelect(a.id, e)} style={{ display: 'none' }} />
+                    {uploadingAccountId === a.id ? (
+                      <p style={{ fontSize: '0.875rem', color: 'var(--primary)' }}>📤 업로드 중...</p>
+                    ) : (
+                      <>
+                        <p style={{ fontSize: '1.5rem', marginBottom: '0.25rem' }}>📄</p>
+                        <p style={{ fontSize: '0.875rem', fontWeight: 500 }}>키워드 보고서 CSV 파일을 드래그하거나 클릭해서 업로드</p>
+                        <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>네이버 검색광고 → 보고서 → 키워드 보고서 다운로드</p>
+                      </>
+                    )}
+                  </div>
+                  {uploadMessage[a.id] && (
+                    <p style={{ fontSize: '0.8125rem', marginTop: '0.5rem', color: uploadMessage[a.id].includes('❌') ? 'var(--danger)' : 'var(--success)' }}>
+                      {uploadMessage[a.id]}
+                    </p>
+                  )}
                 </div>
               ))}
               <p style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.75rem' }}>총 {accounts.length}개 계정 연동됨</p>

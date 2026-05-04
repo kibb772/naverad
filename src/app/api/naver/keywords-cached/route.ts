@@ -10,11 +10,15 @@ export async function POST(req: NextRequest) {
     }
 
     // DB에서 날짜 범위의 키워드 통계 합산
+    // 날짜를 UTC 자정으로 맞춰서 비교 (시간대 이슈 방지)
+    const sinceDate = new Date(since + 'T00:00:00.000Z');
+    const untilDate = new Date(until + 'T23:59:59.999Z');
+
     const stats = await prisma.keywordDailyStat.groupBy({
       by: ['keywordId', 'keywordText', 'campaignName', 'adGroupName'],
       where: {
         accountId,
-        date: { gte: new Date(since), lte: new Date(until) },
+        date: { gte: sinceDate, lte: untilDate },
       },
       _sum: { impressions: true, clicks: true, cost: true },
     });
@@ -36,7 +40,7 @@ export async function POST(req: NextRequest) {
 
     // 수집된 날짜 목록 확인
     const syncLogs = await prisma.syncLog.findMany({
-      where: { accountId, date: { gte: new Date(since), lte: new Date(until) } },
+      where: { accountId, date: { gte: sinceDate, lte: untilDate } },
       orderBy: { date: 'desc' },
     });
 
@@ -45,6 +49,7 @@ export async function POST(req: NextRequest) {
       totalKeywords: keywords.length,
       syncedDays: syncLogs.length,
       lastSync: syncLogs[0]?.date || null,
+      debug: { accountId, since: sinceDate.toISOString(), until: untilDate.toISOString() },
     });
   } catch (error) {
     console.error('Keywords cached error:', error);
