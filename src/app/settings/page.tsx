@@ -27,29 +27,6 @@ export default function SettingsPage() {
     return () => window.removeEventListener('beforeunload', handler);
   }, [uploadingAccountId]);
 
-  // importing 상태 계정 폴링 (서버에서 CSV 처리 완료 감지)
-  useEffect(() => {
-    const importingAccounts = accounts.filter((a) => a.syncStatus === 'importing');
-    if (importingAccounts.length === 0) return;
-
-    const interval = setInterval(async () => {
-      try {
-        const res = await fetch('/api/accounts');
-        if (!res.ok) return;
-        const dbAccounts = await res.json();
-        for (const dbAcc of dbAccounts) {
-          const local = accounts.find((a) => a.id === dbAcc.id);
-          if (local && local.syncStatus === 'importing' && dbAcc.syncStatus === 'ready') {
-            updateAccount(dbAcc.id, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
-            setUploadMessage((prev) => ({ ...prev, [dbAcc.id]: '✅ CSV 데이터 가져오기 완료!' }));
-          }
-        }
-      } catch { /* 무시 */ }
-    }, 10000); // 10초마다 확인
-
-    return () => clearInterval(interval);
-  }, [accounts, updateAccount]);
-
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.apiKey || !form.secretKey || !form.customerId) {
@@ -115,7 +92,7 @@ export default function SettingsPage() {
 
   const handleCSVUpload = async (accountId: string, file: File) => {
     setUploadingAccountId(accountId);
-    setUploadMessage((prev) => ({ ...prev, [accountId]: '업로드 중...' }));
+    setUploadMessage((prev) => ({ ...prev, [accountId]: '업로드 및 처리 중... (최대 1~2분 소요)' }));
 
     try {
       const formData = new FormData();
@@ -132,8 +109,8 @@ export default function SettingsPage() {
       if (!res.ok) {
         setUploadMessage((prev) => ({ ...prev, [accountId]: `❌ ${data.error}` }));
       } else {
-        setUploadMessage((prev) => ({ ...prev, [accountId]: `📤 ${data.message}` }));
-        updateAccount(accountId, { syncStatus: 'importing' });
+        setUploadMessage((prev) => ({ ...prev, [accountId]: `✅ ${data.message}` }));
+        updateAccount(accountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
       }
     } catch {
       setUploadMessage((prev) => ({ ...prev, [accountId]: '❌ 업로드 중 오류가 발생했습니다.' }));
