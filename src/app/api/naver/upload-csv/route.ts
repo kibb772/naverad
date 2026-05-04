@@ -1,61 +1,43 @@
 import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
 
-export async function POST(req: NextRequest) {
+// 백그라운드 처리 함수 (응답 후 실행)
+async function processCSV(accountId: string, text: string) {
   try {
-    const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    const accountId = formData.get('accountId') as string | null;
-
-    if (!file || !accountId) {
-      return NextResponse.json({ error: '파일과 accountId가 필요합니다.' }, { status: 400 });
-    }
-
-    const text = await file.text();
     const lines = text.split('\n').map((l) => l.trim()).filter((l) => l.length > 0);
 
-    // 1행: 제목, 2행: 헤더, 3행~: 데이터
-    // 헤더: 키워드,일별,노출수,클릭수,클릭률(%),평균 CPC,총비용
     if (lines.length < 3) {
-      return NextResponse.json({ error: '데이터가 부족합니다.' }, { status: 400 });
+      console.error('[CSV Import] 데이터가 부족합니다.');
+      return;
     }
 
-    const dataLines = lines.slice(2); // 제목 + 헤더 건너뛰기
+    const dataLines = lines.slice(2);
     let imported = 0;
-    let skipped = 0;
     const syncDates = new Set<string>();
 
-    // 배치 처리 (100개씩)
     const BATCH = 100;
     for (let i = 0; i < dataLines.length; i += BATCH) {
       const batch = dataLines.slice(i, i + BATCH);
       const operations = [];
 
       for (const line of batch) {
-        // CSV 파싱 (쉼표 구분, 따옴표 처리)
         const cols = parseCSVLine(line);
-        if (cols.length < 7) { skipped++; continue; }
+        if (cols.length < 7) continue;
 
         const [keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+        if (keyword === '-') continue;
 
-        // 키워드가 "-"이면 전체 합산 행이므로 건너뛰기
-        if (keyword === '-') { skipped++; continue; }
-
-        // 날짜 파싱: "2026.02.20." → "2026-02-20"
         const dateParts = dateStr.replace(/\.$/, '').split('.');
-        if (dateParts.length < 3) { skipped++; continue; }
+        if (dateParts.length < 3) continue;
         const dateFormatted = `${dateParts[0]}-${dateParts[1].padStart(2, '0')}-${dateParts[2].padStart(2, '0')}`;
         const date = new Date(dateFormatted + 'T00:00:00.000Z');
-
-        if (isNaN(date.getTime())) { skipped++; continue; }
+        if (isNaN(date.getTime())) continue;
 
         const impressions = parseInt(impressionsStr) || 0;
         const clicks = parseInt(clicksStr) || 0;
         const ctr = parseFloat(ctrStr) || 0;
         const cpc = parseInt(cpcStr) || 0;
         const cost = parseInt(costStr) || 0;
-
-        // keywordId가 없으므로 키워드 텍스트를 ID로 사용
         const keywordId = `csv-${keyword}`;
 
         operations.push(
@@ -63,19 +45,8 @@ export async function POST(req: NextRequest) {
             where: { keywordId_date: { keywordId, date } },
             update: { impressions, clicks, cost, cpc, ctr },
             create: {
-              accountId,
-              campaignId: '',
-              campaignName: '',
-              adGroupId: '',
-              adGroupName: '',
-              keywordId,
-              keywordText: keyword,
-              date,
-              impressions,
-              clicks,
-              cost,
-              cpc,
-              ctr,
+              accountId, campaignId: '', campaignName: '', adGroupId: '', adGroupName: '',
+              keywordId, keywordText: keyword, date, impressions, clicks, cost, cpc, ctr,
             },
           })
         );
@@ -86,6 +57,11 @@ export async function POST(req: NextRequest) {
 
       if (operations.length > 0) {
         await prisma.$transaction(operations);
+      }
+
+      // 진행률 로그
+      if (i % 500 === 0) {
+        console.log(`[CSV Import] ${accountId}: ${i}/${dataLines.length} 처리 중...`);
       }
     }
 
@@ -99,18 +75,54 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 계정 상태 업데이트
+    // 완료: 계정 상태 업데이트
     await prisma.naverAdsAccount.update({
       where: { id: accountId },
       data: { isActive: true, syncStatus: 'ready', lastSyncAt: new Date() },
     });
 
+    console.log(`[CSV Import] ${accountId}: 완료! ${imported}개 키워드, ${syncDates.size}일치`);
+  } catch (error) {
+    console.error(`[CSV Import] ${accountId}: 실패`, error);
+    // 실패해도 계정 상태를 ready로 복구 (재업로드 가능하도록)
+    await prisma.naverAdsAccount.update({
+      where: { id: accountId },
+      data: { syncStatus: 'ready' },
+    }).catch(() => {});
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file') as File | null;
+    const accountId = formData.get('accountId') as string | null;
+
+    if (!file || !accountId) {
+      return NextResponse.json({ error: '파일과 accountId가 필요합니다.' }, { status: 400 });
+    }
+
+    // 파일 내용을 먼저 읽어두기
+    const text = await file.text();
+    const lineCount = text.split('\n').filter((l) => l.trim().length > 0).length;
+
+    if (lineCount < 3) {
+      return NextResponse.json({ error: '데이터가 부족합니다.' }, { status: 400 });
+    }
+
+    // 계정 상태를 importing으로 변경
+    await prisma.naverAdsAccount.update({
+      where: { id: accountId },
+      data: { syncStatus: 'importing' },
+    });
+
+    // 백그라운드로 처리 시작 (응답은 바로 돌려줌)
+    processCSV(accountId, text).catch(console.error);
+
     return NextResponse.json({
       success: true,
-      imported,
-      skipped,
-      dates: syncDates.size,
-      message: `${imported}개 키워드 데이터 가져오기 완료 (${syncDates.size}일치)`,
+      message: `CSV 파일 접수 완료 (${lineCount - 2}행). 서버에서 처리 중입니다. 창을 닫아도 됩니다.`,
+      lines: lineCount - 2,
     });
   } catch (error) {
     console.error('CSV upload error:', error);
@@ -118,7 +130,6 @@ export async function POST(req: NextRequest) {
   }
 }
 
-// 간단한 CSV 라인 파서 (따옴표 내 쉼표 처리)
 function parseCSVLine(line: string): string[] {
   const result: string[] = [];
   let current = '';

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import Link from 'next/link';
 import { useAccounts } from '@/context/AccountContext';
 
@@ -15,6 +15,40 @@ export default function SettingsPage() {
   const [uploadMessage, setUploadMessage] = useState<Record<string, string>>({});
   const [dragging, setDragging] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+
+  // 업로드 중 페이지 이탈 방지
+  useEffect(() => {
+    if (!uploadingAccountId) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [uploadingAccountId]);
+
+  // importing 상태 계정 폴링 (서버에서 CSV 처리 완료 감지)
+  useEffect(() => {
+    const importingAccounts = accounts.filter((a) => a.syncStatus === 'importing');
+    if (importingAccounts.length === 0) return;
+
+    const interval = setInterval(async () => {
+      try {
+        const res = await fetch('/api/accounts');
+        if (!res.ok) return;
+        const dbAccounts = await res.json();
+        for (const dbAcc of dbAccounts) {
+          const local = accounts.find((a) => a.id === dbAcc.id);
+          if (local && local.syncStatus === 'importing' && dbAcc.syncStatus === 'ready') {
+            updateAccount(dbAcc.id, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+            setUploadMessage((prev) => ({ ...prev, [dbAcc.id]: '✅ CSV 데이터 가져오기 완료!' }));
+          }
+        }
+      } catch { /* 무시 */ }
+    }, 10000); // 10초마다 확인
+
+    return () => clearInterval(interval);
+  }, [accounts, updateAccount]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,8 +132,8 @@ export default function SettingsPage() {
       if (!res.ok) {
         setUploadMessage((prev) => ({ ...prev, [accountId]: `❌ ${data.error}` }));
       } else {
-        setUploadMessage((prev) => ({ ...prev, [accountId]: `✅ ${data.message}` }));
-        updateAccount(accountId, { isActive: true, syncStatus: 'ready', syncProgress: 100 });
+        setUploadMessage((prev) => ({ ...prev, [accountId]: `📤 ${data.message}` }));
+        updateAccount(accountId, { syncStatus: 'importing' });
       }
     } catch {
       setUploadMessage((prev) => ({ ...prev, [accountId]: '❌ 업로드 중 오류가 발생했습니다.' }));
@@ -129,7 +163,8 @@ export default function SettingsPage() {
       <aside style={{ width: '240px', background: 'white', borderRight: '1px solid var(--border)', padding: '1.5rem 1rem', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '2rem' }}>🔥 열끈</h1>
         <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
-          <Link href="/dashboard" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>📊 대시보드</Link>
+          <Link href="/dashboard" onClick={(e) => { if (uploadingAccountId) { if (!confirm('CSV 업로드가 진행 중입니다. 페이지를 떠나시겠습니까?')) e.preventDefault(); } }}
+            style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>📊 대시보드</Link>
           <Link href="/settings" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 600, background: 'var(--bg)', color: 'var(--primary)' }}>🔗 계정 연동</Link>
         </nav>
         <button onClick={() => { import('next-auth/react').then(m => m.signOut({ callbackUrl: '/login' })); }}
@@ -182,10 +217,17 @@ export default function SettingsPage() {
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                           <span style={{ fontWeight: 600 }}>{a.accountName}</span>
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
-                            <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} />
-                            연동 완료
-                          </span>
+                          {a.syncStatus === 'importing' ? (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#fef3c7', color: '#92400e' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#f59e0b', display: 'inline-block' }} />
+                              CSV 처리 중...
+                            </span>
+                          ) : (
+                            <span style={{ display: 'inline-flex', alignItems: 'center', gap: '0.25rem', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.75rem', fontWeight: 600, background: '#dbeafe', color: '#1e40af' }}>
+                              <span style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#2563eb', display: 'inline-block' }} />
+                              연동 완료
+                            </span>
+                          )}
                         </div>
                         <div style={{ fontSize: '0.8125rem', color: 'var(--text-muted)', marginTop: '0.125rem' }}>
                           Customer ID: {a.customerId} · 연동일: {new Date(a.connectedAt).toLocaleDateString('ko-KR')}
