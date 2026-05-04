@@ -11,7 +11,7 @@ export interface LinkedAccount {
   secretKey?: string;
   dailyBudgetGoal?: number;
   isActive: boolean;
-  syncStatus: 'pending' | 'syncing' | 'ready';
+  syncStatus: 'pending' | 'syncing' | 'ready' | 'importing';
   syncProgress?: number;
   connectedAt: string;
   campaigns?: {
@@ -56,7 +56,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
               secretKey: a.secretKey,
               dailyBudgetGoal: a.dailyBudgetGoal ?? undefined,
               isActive: a.isActive,
-              syncStatus: (a.syncStatus as 'pending' | 'syncing' | 'ready') || 'pending',
+              syncStatus: (a.syncStatus as 'pending' | 'syncing' | 'ready' | 'importing') || 'pending',
               connectedAt: a.createdAt,
               campaigns: [],
             }));
