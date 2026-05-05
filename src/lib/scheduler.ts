@@ -293,12 +293,7 @@ export function startScheduler() {
     processCSVQueue();
   }, 10000);
 
-  // 서버 시작 시 즉시 한 번 실행 (10초 후)
-  setTimeout(() => {
-    runDailySync().catch(console.error);
-  }, 10000);
-
-  // 매일 새벽 6시에 실행
+  // 매일 오전 9시에 실행
   const scheduleNext = () => {
     const now = new Date();
     const next = new Date(now);
