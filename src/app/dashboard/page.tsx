@@ -345,7 +345,7 @@ export default function DashboardPage() {
             💰 남은 비즈머니
           </span>
           <span style={{ fontSize: '1.125rem', fontWeight: 700, color: bizmoney <= 10000 ? '#dc2626' : '#16a34a' }}>
-            ₩{bizmoney.toLocaleString()}
+            ₩{Math.floor(bizmoney).toLocaleString()}
             {bizmoney <= 10000 && <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#dc2626' }}>⚠️ 충전 필요</span>}
           </span>
         </div>

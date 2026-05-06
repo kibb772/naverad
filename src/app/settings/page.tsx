@@ -16,6 +16,9 @@ export default function SettingsPage() {
   const [dragging, setDragging] = useState<string | null>(null);
   const fileInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  // 비즈머니 잔액
+  const [bizmoneyMap, setBizmoneyMap] = useState<Record<string, number | null>>({});
+
   // 업로드 중 페이지 이탈 방지
   useEffect(() => {
     if (!uploadingAccountId) return;
@@ -26,6 +29,29 @@ export default function SettingsPage() {
     window.addEventListener('beforeunload', handler);
     return () => window.removeEventListener('beforeunload', handler);
   }, [uploadingAccountId]);
+
+  // 비즈머니 잔액 조회
+  useEffect(() => {
+    if (accounts.length === 0) return;
+    for (const account of accounts) {
+      fetch('/api/naver/bizmoney', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          apiKey: account.apiKey,
+          secretKey: account.secretKey,
+          customerId: account.customerId,
+        }),
+      })
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.bizmoney !== undefined) {
+            setBizmoneyMap((prev) => ({ ...prev, [account.id]: Math.floor(data.bizmoney) }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, [accounts.length]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // importing 상태 계정 폴링 (서버에서 CSV 처리 완료 감지)
   useEffect(() => {
@@ -238,6 +264,17 @@ export default function SettingsPage() {
                       연동 해제
                     </button>
                   </div>
+
+                  {/* 비즈머니 잔액 */}
+                  {bizmoneyMap[a.id] !== undefined && bizmoneyMap[a.id] !== null && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
+                      <span style={{ fontSize: '0.8125rem', fontWeight: 500, whiteSpace: 'nowrap' }}>💰 남은 비즈머니:</span>
+                      <span style={{ fontSize: '0.875rem', fontWeight: 700, color: (bizmoneyMap[a.id] || 0) <= 10000 ? '#dc2626' : '#16a34a' }}>
+                        ₩{(bizmoneyMap[a.id] || 0).toLocaleString()}
+                        {(bizmoneyMap[a.id] || 0) <= 10000 && <span style={{ fontSize: '0.75rem', marginLeft: '0.375rem', color: '#dc2626' }}>⚠️ 충전 필요</span>}
+                      </span>
+                    </div>
+                  )}
 
                   {/* 일 예산 목표 */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid var(--border)' }}>
