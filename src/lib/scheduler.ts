@@ -1,9 +1,73 @@
 import prisma from './prisma';
 import { NaverAdsService } from '@/services/naver-ads.service';
 import { processCSVQueue } from './csv-queue';
-import nodemailer from 'nodemailer';
 
 let schedulerStarted = false;
+
+// Gmail REST API로 이메일 발송
+async function sendEmailViaGmailAPI(subject: string, html: string) {
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const gmailUser = process.env.GMAIL_USER;
+
+  if (!clientId || !clientSecret || !refreshToken || !gmailUser) {
+    console.log('[Scheduler] Gmail OAuth 설정이 없어 이메일 발송을 건너뜁니다.');
+    return false;
+  }
+
+  // Access Token 발급
+  const tokenRes = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({
+      client_id: clientId,
+      client_secret: clientSecret,
+      refresh_token: refreshToken,
+      grant_type: 'refresh_token',
+    }),
+  });
+  const tokenData = await tokenRes.json();
+  const accessToken = tokenData.access_token;
+  if (!accessToken) {
+    console.error('[Scheduler] Access token 발급 실패:', tokenData);
+    return false;
+  }
+
+  // 이메일 생성
+  const boundary = 'boundary_' + Date.now();
+  const lines = [
+    `From: 열끈 알림 <${gmailUser}>`,
+    `To: ${gmailUser}`,
+    `Subject: =?UTF-8?B?${Buffer.from(subject).toString('base64')}?=`,
+    'MIME-Version: 1.0',
+    `Content-Type: multipart/alternative; boundary="${boundary}"`,
+    '',
+    `--${boundary}`,
+    'Content-Type: text/html; charset=UTF-8',
+    'Content-Transfer-Encoding: base64',
+    '',
+    Buffer.from(html).toString('base64'),
+    `--${boundary}--`,
+  ];
+  const raw = Buffer.from(lines.join('\r\n')).toString('base64url');
+
+  // Gmail API로 발송
+  const sendRes = await fetch('https://gmail.googleapis.com/gmail/v1/users/me/messages/send', {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ raw }),
+  });
+
+  if (!sendRes.ok) {
+    const err = await sendRes.text();
+    console.error('[Scheduler] Gmail API 발송 실패:', err);
+    return false;
+  }
+
+  console.log(`[Scheduler] 이메일 발송 완료 → ${gmailUser}`);
+  return true;
+}
 
 async function syncAccountData(account: {
   id: string;
@@ -323,12 +387,8 @@ async function checkBizmoneyAndNotify() {
 }
 
 async function sendBizmoneyEmail(results: { accountName: string; customerId: string; bizmoney: number }[]) {
-  const clientId = process.env.GMAIL_CLIENT_ID;
-  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
-  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
   const gmailUser = process.env.GMAIL_USER;
-
-  if (!clientId || !clientSecret || !refreshToken || !gmailUser) {
+  if (!gmailUser) {
     console.log('[Scheduler] Gmail OAuth 설정이 없어 이메일 발송을 건너뜁니다.');
     return;
   }
@@ -346,7 +406,7 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
     html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
     html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
     for (const r of lowBalance) {
-      html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${r.bizmoney.toLocaleString()}</td></tr>`;
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
     }
     html += `</table>`;
   }
@@ -356,7 +416,7 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
     html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
     html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
     for (const r of normal) {
-      html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${r.bizmoney.toLocaleString()}</td></tr>`;
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
     }
     html += `</table>`;
   }
@@ -370,29 +430,7 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
     ? `⚠️ [열끈] 비즈머니 부족 ${lowBalance.length}개 계정 (${today})`
     : `✅ [열끈] 비즈머니 잔액 리포트 (${today})`;
 
-  try {
-    const transporter = nodemailer.createTransport({
-      service: 'gmail',
-      auth: {
-        type: 'OAuth2',
-        user: gmailUser,
-        clientId,
-        clientSecret,
-        refreshToken,
-      },
-    });
-
-    await transporter.sendMail({
-      from: `열끈 알림 <${gmailUser}>`,
-      to: gmailUser,
-      subject,
-      html,
-    });
-
-    console.log(`[Scheduler] 비즈머니 알림 이메일 발송 완료 → ${gmailUser}`);
-  } catch (error) {
-    console.error('[Scheduler] 이메일 발송 실패:', error);
-  }
+  await sendEmailViaGmailAPI(subject, html);
 }
 
 // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립/재시작 대응)
