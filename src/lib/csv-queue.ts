@@ -62,7 +62,6 @@ async function processCSV(accountId: string, text: string) {
     if (cols.length < 7) continue;
 
     const [keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
-    if (keyword === '-') continue;
 
     const dateParts = dateStr.replace(/\.$/, '').split('.');
     if (dateParts.length < 3) continue;
