@@ -382,7 +382,7 @@ export default function DashboardPage() {
 
       {/* 탭 */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-        {([['overview', '📊 캠페인 현황'], ['diagnosis', '🔍 AI 진단'], ['report', '📋 일간 리포트']] as const).map(([key, label]) => (
+        {([['overview', '📊 캠페인 현황']] as const).map(([key, label]) => (
           <button key={key} onClick={() => setActiveTab(key as 'overview' | 'diagnosis' | 'report')} data-testid={`tab-${key}`}
             style={{ padding: '0.5rem 1rem', border: 'none', background: activeTab === key ? 'var(--primary)' : 'transparent', color: activeTab === key ? 'white' : 'var(--text-muted)', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
             {label}
@@ -396,8 +396,6 @@ export default function DashboardPage() {
           <KeywordTopSection account={selectedAccount} dateRange={dateRange} />
         </>
       )}
-      {activeTab === 'diagnosis' && <DiagnosisTab diagnosis={d.diagnosis} />}
-      {activeTab === 'report' && <ReportTab report={d.report} />}
       </>
       )}
     </DashboardLayout>
