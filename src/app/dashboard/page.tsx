@@ -61,10 +61,9 @@ const MAX_DAYS = 90; // 네이버 검색광고 Stats API 최대 조회 기간
 const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
 function getDefaultDateRange() {
-  const today = new Date();
-  const yesterday = new Date(today);
+  const yesterday = new Date();
   yesterday.setDate(yesterday.getDate() - 1);
-  return { since: formatDate(yesterday), until: formatDate(today) };
+  return { since: formatDate(yesterday), until: formatDate(yesterday) };
 }
 
 function getDaysDiff(since: string, until: string): number {
