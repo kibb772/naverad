@@ -475,15 +475,16 @@ export function startScheduler() {
     processCSVQueue();
   }, 10000);
 
-  // 매일 새벽 2시에 키워드 수집
+  // 매일 새벽 2시(KST)에 키워드 수집
+  // KST 2시 = UTC 17시 (전날)
   const scheduleSync = () => {
     const now = new Date();
     const next = new Date(now);
-    next.setHours(2, 0, 0, 0);
+    next.setUTCHours(17, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
 
     const delay = next.getTime() - now.getTime();
-    console.log(`[Scheduler] 다음 수집: ${next.toLocaleString('ko-KR')} (${Math.round(delay / 1000 / 60)}분 후)`);
+    console.log(`[Scheduler] 다음 수집: ${next.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST (${Math.round(delay / 1000 / 60)}분 후)`);
 
     setTimeout(() => {
       runDailySync().catch(console.error);
@@ -491,15 +492,16 @@ export function startScheduler() {
     }, delay);
   };
 
-  // 매일 오전 9시에 비즈머니 잔액 체크 + 이메일 발송
+  // 매일 오전 9시(KST)에 비즈머니 잔액 체크 + 이메일 발송
+  // KST 9시 = UTC 0시
   const scheduleBizmoneyAlert = () => {
     const now = new Date();
     const next = new Date(now);
-    next.setHours(9, 0, 0, 0);
+    next.setUTCHours(0, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
 
     const delay = next.getTime() - now.getTime();
-    console.log(`[Scheduler] 다음 잔액 알림: ${next.toLocaleString('ko-KR')} (${Math.round(delay / 1000 / 60)}분 후)`);
+    console.log(`[Scheduler] 다음 잔액 알림: ${next.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST (${Math.round(delay / 1000 / 60)}분 후)`);
 
     setTimeout(() => {
       checkBizmoneyAndNotify().catch(console.error);
