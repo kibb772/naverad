@@ -65,7 +65,8 @@ async function processCSV(accountId: string, text: string) {
   }[] = [];
 
   for (const line of dataLines) {
-    const cols = parseCSVLine(line);
+    // 탭 구분자 감지: 탭이 있으면 탭으로 분리, 없으면 CSV 파서 사용
+    const cols = line.includes('\t') ? line.split('\t').map((c) => c.trim()) : parseCSVLine(line);
     if (cols.length < 7) continue;
 
     // 8컬럼 형식 감지: 헤더 기반으로 컬럼 순서 결정
@@ -75,14 +76,22 @@ async function processCSV(accountId: string, text: string) {
     let keyword: string, dateStr: string, campaignType: string, impressionsStr: string, clicksStr: string, ctrStr: string, cpcStr: string, costStr: string;
 
     if (cols.length >= 8) {
-      // 헤더에서 컬럼 순서 감지 (첫 번째 컬럼이 날짜 형식이 아니면 캠페인유형)
-      // 두 번째 컬럼이 날짜 형식(YYYY.MM.DD)이면 형식B (캠페인유형, 일별, 키워드, ...)
-      const secondCol = cols[1].replace(/\.$/, '');
-      if (/^\d{4}\.\d{2}\.\d{2}$/.test(secondCol)) {
-        // 형식B: 캠페인유형, 일별, 키워드, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+      // 날짜 형식 감지로 컬럼 순서 결정
+      // 형식A: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+      // 형식B: 캠페인유형, 일별, 키워드, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+      // 형식C: 캠페인유형, 키워드, 일별, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+      const col1 = cols[0].replace(/\.$/, '');
+      const col2 = cols[1].replace(/\.$/, '');
+      const col3 = cols[2].replace(/\.$/, '');
+
+      if (/^\d{4}\.\d{2}\.\d{2}$/.test(col2)) {
+        // 두 번째가 날짜 → 형식B: 캠페인유형, 일별, 키워드
         [campaignType, dateStr, keyword, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+      } else if (/^\d{4}\.\d{2}\.\d{2}$/.test(col3)) {
+        // 세 번째가 날짜 → 형식C: 캠페인유형, 키워드, 일별
+        [campaignType, keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
       } else {
-        // 형식A: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+        // 형식A: 키워드, 일별, 캠페인유형
         [keyword, dateStr, campaignType, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
       }
     } else {
