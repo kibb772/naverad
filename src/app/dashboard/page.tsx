@@ -507,6 +507,7 @@ function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | n
               <tr style={{ borderBottom: '2px solid var(--border)', textAlign: 'left' }}>
                 <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500, width: '40px' }}>#</th>
                 <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500 }}>키워드</th>
+                <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500 }}>캠페인</th>
                 <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500, textAlign: 'right' }}>클릭</th>
                 <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500, textAlign: 'right' }}>노출</th>
                 <th style={{ padding: '0.75rem 0.5rem', color: 'var(--text-muted)', fontWeight: 500, textAlign: 'right' }}>CTR</th>
@@ -519,6 +520,7 @@ function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | n
                 <tr key={kw.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.625rem 0.5rem', color: i < 3 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: i < 3 ? 700 : 400 }}>{i + 1}</td>
                   <td style={{ padding: '0.625rem 0.5rem', fontWeight: 600 }}>{kw.text}</td>
+                  <td style={{ padding: '0.625rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{kw.campaignName || '-'}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--primary)' }}>{kw.clicks.toLocaleString()}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>{kw.impressions.toLocaleString()}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>{kw.ctr}%</td>

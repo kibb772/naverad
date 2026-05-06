@@ -61,7 +61,16 @@ async function processCSV(accountId: string, text: string) {
     const cols = parseCSVLine(line);
     if (cols.length < 7) continue;
 
-    const [keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+    // 8컬럼: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+    // 7컬럼(구형): 키워드, 일별, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+    let keyword: string, dateStr: string, campaignType: string, impressionsStr: string, clicksStr: string, ctrStr: string, cpcStr: string, costStr: string;
+
+    if (cols.length >= 8) {
+      [keyword, dateStr, campaignType, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+    } else {
+      [keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+      campaignType = '';
+    }
 
     const dateParts = dateStr.replace(/\.$/, '').split('.');
     if (dateParts.length < 3) continue;
@@ -72,10 +81,10 @@ async function processCSV(accountId: string, text: string) {
     rows.push({
       accountId,
       campaignId: '',
-      campaignName: '',
+      campaignName: campaignType,
       adGroupId: '',
       adGroupName: '',
-      keywordId: `csv-${keyword}`,
+      keywordId: `csv-${campaignType}-${keyword}`,
       keywordText: keyword,
       date,
       impressions: parseInt(impressionsStr) || 0,

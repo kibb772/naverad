@@ -14,9 +14,9 @@ export async function POST(req: NextRequest) {
     const sinceDate = new Date(since + 'T00:00:00.000Z');
     const untilDate = new Date(until + 'T23:59:59.999Z');
 
-    // 키워드 텍스트 기준으로 합산 (CSV와 API 수집 데이터 중복 방지)
+    // 키워드 텍스트 + 캠페인유형 기준으로 합산 (캠페인별 구분)
     const stats = await prisma.keywordDailyStat.groupBy({
-      by: ['keywordText'],
+      by: ['keywordText', 'campaignName'],
       where: {
         accountId,
         date: { gte: sinceDate, lte: untilDate },
@@ -25,9 +25,9 @@ export async function POST(req: NextRequest) {
     });
 
     const keywords = stats.map((s) => ({
-      id: s.keywordText,
+      id: `${s.keywordText}-${s.campaignName}`,
       text: s.keywordText,
-      campaignName: '',
+      campaignName: s.campaignName || '',
       adGroupName: '',
       cost: s._sum.cost || 0,
       impressions: s._sum.impressions || 0,
