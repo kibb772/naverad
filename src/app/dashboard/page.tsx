@@ -80,8 +80,28 @@ export default function DashboardPage() {
   const [campaignData, setCampaignData] = useState<ReturnType<typeof getDemoDataForAccount> | null>(null);
   const [dataSource, setDataSource] = useState<'live' | 'demo'>('demo');
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
+  const [bizmoney, setBizmoney] = useState<number | null>(null);
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
+
+  // 비즈머니 잔액 조회
+  useEffect(() => {
+    if (!selectedAccount) return;
+    setBizmoney(null);
+
+    fetch('/api/naver/bizmoney', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        apiKey: selectedAccount.apiKey,
+        secretKey: selectedAccount.secretKey,
+        customerId: selectedAccount.customerId,
+      }),
+    })
+      .then((r) => r.json())
+      .then((data) => { if (data.bizmoney !== undefined) setBizmoney(data.bizmoney); })
+      .catch(() => {});
+  }, [selectedAccount?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // 계정이 바뀌거나 날짜가 바뀔 때마다 실제 API 호출 시도
   useEffect(() => {
@@ -318,6 +338,19 @@ export default function DashboardPage() {
           </div>
         ))}
       </div>
+
+      {/* 비즈머니 잔액 표시 */}
+      {bizmoney !== null && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: bizmoney <= 10000 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${bizmoney <= 10000 ? '#fecaca' : '#bbf7d0'}` }}>
+          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
+            💰 남은 비즈머니
+          </span>
+          <span style={{ fontSize: '1.125rem', fontWeight: 700, color: bizmoney <= 10000 ? '#dc2626' : '#16a34a' }}>
+            ₩{bizmoney.toLocaleString()}
+            {bizmoney <= 10000 && <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#dc2626' }}>⚠️ 충전 필요</span>}
+          </span>
+        </div>
+      )}
 
       {selectedAccount?.dailyBudgetGoal && (
         <div className="card" style={{ marginBottom: '1.5rem', padding: '1rem' }}>

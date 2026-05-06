@@ -1,6 +1,7 @@
 import prisma from './prisma';
 import { NaverAdsService } from '@/services/naver-ads.service';
 import { processCSVQueue } from './csv-queue';
+import nodemailer from 'nodemailer';
 
 let schedulerStarted = false;
 
@@ -282,6 +283,113 @@ async function runDailySync() {
   console.log('[Scheduler] 일일 데이터 수집 완료');
 }
 
+// 비즈머니 잔액 체크 + 이메일 발송
+async function checkBizmoneyAndNotify() {
+  console.log('[Scheduler] 비즈머니 잔액 체크 시작...');
+
+  const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
+  if (accounts.length === 0) {
+    console.log('[Scheduler] 연동된 계정이 없습니다.');
+    return;
+  }
+
+  const results: { accountName: string; customerId: string; bizmoney: number }[] = [];
+
+  for (const account of accounts) {
+    try {
+      const naverAds = new NaverAdsService({
+        apiKey: account.apiKey,
+        secretKey: account.secretKey,
+        customerId: account.customerId,
+      });
+      const result = await naverAds.getBizmoney();
+      if (result.success && result.data) {
+        const data = result.data as Record<string, unknown>;
+        const bizmoney = (data?.bizmoney ?? data?.balance ?? data?.amount ?? 0) as number;
+        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney });
+        console.log(`[Scheduler] ${account.accountName}: 비즈머니 ₩${bizmoney.toLocaleString()}`);
+      } else {
+        console.error(`[Scheduler] ${account.accountName}: 비즈머니 조회 실패`, result.error);
+        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+      }
+    } catch (error) {
+      console.error(`[Scheduler] ${account.accountName}: 비즈머니 조회 오류`, error);
+      results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+    }
+  }
+
+  // 이메일 발송
+  await sendBizmoneyEmail(results);
+}
+
+async function sendBizmoneyEmail(results: { accountName: string; customerId: string; bizmoney: number }[]) {
+  const smtpUser = process.env.SMTP_USER;
+  const smtpPass = process.env.SMTP_PASS;
+  const alertTo = process.env.ALERT_EMAIL_TO || smtpUser;
+
+  if (!smtpUser || !smtpPass) {
+    console.log('[Scheduler] SMTP 설정이 없어 이메일 발송을 건너뜁니다.');
+    return;
+  }
+
+  const lowBalance = results.filter((r) => r.bizmoney >= 0 && r.bizmoney <= 10000);
+  const normal = results.filter((r) => r.bizmoney > 10000);
+  const failed = results.filter((r) => r.bizmoney < 0);
+
+  const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
+
+  let html = `<h2>📊 비즈머니 잔액 리포트 (${today})</h2>`;
+
+  if (lowBalance.length > 0) {
+    html += `<h3 style="color: #dc2626;">⚠️ 잔액 부족 (1만원 이하) - ${lowBalance.length}개 계정</h3>`;
+    html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
+    html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+    for (const r of lowBalance) {
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${r.bizmoney.toLocaleString()}</td></tr>`;
+    }
+    html += `</table>`;
+  }
+
+  if (normal.length > 0) {
+    html += `<h3 style="color: #16a34a;">✅ 정상 - ${normal.length}개 계정</h3>`;
+    html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
+    html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+    for (const r of normal) {
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${r.bizmoney.toLocaleString()}</td></tr>`;
+    }
+    html += `</table>`;
+  }
+
+  if (failed.length > 0) {
+    html += `<h3 style="color: #9ca3af;">❓ 조회 실패 - ${failed.length}개 계정</h3>`;
+    html += `<p style="color: #6b7280;">${failed.map((r) => r.accountName).join(', ')}</p>`;
+  }
+
+  const subject = lowBalance.length > 0
+    ? `⚠️ [열끈] 비즈머니 부족 ${lowBalance.length}개 계정 (${today})`
+    : `✅ [열끈] 비즈머니 잔액 리포트 (${today})`;
+
+  try {
+    const transporter = nodemailer.createTransport({
+      host: 'smtp.gmail.com',
+      port: 587,
+      secure: false,
+      auth: { user: smtpUser, pass: smtpPass },
+    });
+
+    await transporter.sendMail({
+      from: `열끈 알림 <${smtpUser}>`,
+      to: alertTo,
+      subject,
+      html,
+    });
+
+    console.log(`[Scheduler] 비즈머니 알림 이메일 발송 완료 → ${alertTo}`);
+  } catch (error) {
+    console.error('[Scheduler] 이메일 발송 실패:', error);
+  }
+}
+
 // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립/재시작 대응)
 async function runDailySyncIfMissing() {
   const yesterday = new Date();
@@ -317,15 +425,15 @@ export function startScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
 
-  console.log('[Scheduler] 스케줄러 시작됨 (수집 시간: 매일 새벽 2시 KST)');
+  console.log('[Scheduler] 스케줄러 시작됨 (수집: 매일 새벽 2시, 잔액 알림: 매일 오전 9시 KST)');
 
   // CSV 큐 처리 시작 (10초마다 확인)
   setInterval(() => {
     processCSVQueue();
   }, 10000);
 
-  // 매일 새벽 2시에 실행 (KST 기준 - 네이버 광고 전일 데이터 확정 후)
-  const scheduleNext = () => {
+  // 매일 새벽 2시에 키워드 수집
+  const scheduleSync = () => {
     const now = new Date();
     const next = new Date(now);
     next.setHours(2, 0, 0, 0);
@@ -336,14 +444,31 @@ export function startScheduler() {
 
     setTimeout(() => {
       runDailySync().catch(console.error);
-      scheduleNext();
+      scheduleSync();
+    }, delay);
+  };
+
+  // 매일 오전 9시에 비즈머니 잔액 체크 + 이메일 발송
+  const scheduleBizmoneyAlert = () => {
+    const now = new Date();
+    const next = new Date(now);
+    next.setHours(9, 0, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+
+    const delay = next.getTime() - now.getTime();
+    console.log(`[Scheduler] 다음 잔액 알림: ${next.toLocaleString('ko-KR')} (${Math.round(delay / 1000 / 60)}분 후)`);
+
+    setTimeout(() => {
+      checkBizmoneyAndNotify().catch(console.error);
+      scheduleBizmoneyAlert();
     }, delay);
   };
 
   // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립 대응)
   runDailySyncIfMissing().catch(console.error);
 
-  scheduleNext();
+  scheduleSync();
+  scheduleBizmoneyAlert();
 }
 
 

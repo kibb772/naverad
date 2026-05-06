@@ -184,4 +184,9 @@ export class NaverAdsService {
   async getStatReportDownload(reportJobId: string) {
     return this.request('GET', `/stat-reports/${reportJobId}/download`);
   }
+
+  // 비즈머니 잔액 조회
+  async getBizmoney() {
+    return this.request<{ bizmoney: number; budgetLock: boolean; totalPrepayCost: number }>('GET', '/billing/bizmoney');
+  }
 }
