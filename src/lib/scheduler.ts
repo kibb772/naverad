@@ -282,22 +282,53 @@ async function runDailySync() {
   console.log('[Scheduler] 일일 데이터 수집 완료');
 }
 
+// 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립/재시작 대응)
+async function runDailySyncIfMissing() {
+  const yesterday = new Date();
+  yesterday.setDate(yesterday.getDate() - 1);
+  const syncDate = yesterday.toISOString().slice(0, 10);
+
+  const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
+  if (accounts.length === 0) return;
+
+  for (const account of accounts) {
+    const existing = await prisma.syncLog.findUnique({
+      where: { accountId_date: { accountId: account.id, date: new Date(syncDate) } },
+    });
+
+    if (!existing) {
+      console.log(`[Scheduler] 서버 시작 시 누락 감지: ${account.customerId} - ${syncDate} 수집 시작`);
+      try {
+        const result = await syncAccountData({
+          id: account.id,
+          apiKey: account.apiKey,
+          secretKey: account.secretKey,
+          customerId: account.customerId,
+        }, syncDate);
+        console.log(`[Scheduler] 누락 수집 완료: ${account.customerId}`, result);
+      } catch (error) {
+        console.error(`[Scheduler] 누락 수집 실패: ${account.customerId}`, error);
+      }
+    }
+  }
+}
+
 export function startScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
 
-  console.log('[Scheduler] 스케줄러 시작됨');
+  console.log('[Scheduler] 스케줄러 시작됨 (수집 시간: 매일 새벽 2시 KST)');
 
   // CSV 큐 처리 시작 (10초마다 확인)
   setInterval(() => {
     processCSVQueue();
   }, 10000);
 
-  // 매일 오전 9시에 실행
+  // 매일 새벽 2시에 실행 (KST 기준 - 네이버 광고 전일 데이터 확정 후)
   const scheduleNext = () => {
     const now = new Date();
     const next = new Date(now);
-    next.setHours(9, 0, 0, 0);
+    next.setHours(2, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
 
     const delay = next.getTime() - now.getTime();
@@ -308,6 +339,9 @@ export function startScheduler() {
       scheduleNext();
     }, delay);
   };
+
+  // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립 대응)
+  runDailySyncIfMissing().catch(console.error);
 
   scheduleNext();
 }
