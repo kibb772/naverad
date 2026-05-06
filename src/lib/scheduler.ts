@@ -323,12 +323,13 @@ async function checkBizmoneyAndNotify() {
 }
 
 async function sendBizmoneyEmail(results: { accountName: string; customerId: string; bizmoney: number }[]) {
-  const smtpUser = process.env.SMTP_USER;
-  const smtpPass = process.env.SMTP_PASS;
-  const alertTo = process.env.ALERT_EMAIL_TO || smtpUser;
+  const clientId = process.env.GMAIL_CLIENT_ID;
+  const clientSecret = process.env.GMAIL_CLIENT_SECRET;
+  const refreshToken = process.env.GMAIL_REFRESH_TOKEN;
+  const gmailUser = process.env.GMAIL_USER;
 
-  if (!smtpUser || !smtpPass) {
-    console.log('[Scheduler] SMTP 설정이 없어 이메일 발송을 건너뜁니다.');
+  if (!clientId || !clientSecret || !refreshToken || !gmailUser) {
+    console.log('[Scheduler] Gmail OAuth 설정이 없어 이메일 발송을 건너뜁니다.');
     return;
   }
 
@@ -371,20 +372,24 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
 
   try {
     const transporter = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 465,
-      secure: true,
-      auth: { user: smtpUser, pass: smtpPass },
+      service: 'gmail',
+      auth: {
+        type: 'OAuth2',
+        user: gmailUser,
+        clientId,
+        clientSecret,
+        refreshToken,
+      },
     });
 
     await transporter.sendMail({
-      from: `열끈 알림 <${smtpUser}>`,
-      to: alertTo,
+      from: `열끈 알림 <${gmailUser}>`,
+      to: gmailUser,
       subject,
       html,
     });
 
-    console.log(`[Scheduler] 비즈머니 알림 이메일 발송 완료 → ${alertTo}`);
+    console.log(`[Scheduler] 비즈머니 알림 이메일 발송 완료 → ${gmailUser}`);
   } catch (error) {
     console.error('[Scheduler] 이메일 발송 실패:', error);
   }
