@@ -111,7 +111,7 @@ async function processCSV(accountId: string, text: string) {
       campaignName: campaignType,
       adGroupId: '',
       adGroupName: '',
-      keywordId: `csv-${campaignType}-${keyword}`,
+      keywordId: `csv-${accountId}-${campaignType}-${keyword}`,
       keywordText: keyword,
       date,
       impressions: parseInt(impressionsStr) || 0,
@@ -150,6 +150,7 @@ async function processCSV(accountId: string, text: string) {
     try {
       const result = await prisma.keywordDailyStat.createMany({
         data: batchData,
+        skipDuplicates: true,
       });
       totalInserted += result.count;
       console.log(`[CSV Queue] ${accountId}: batch ${i}~${i + batchData.length}, inserted=${result.count}`);
