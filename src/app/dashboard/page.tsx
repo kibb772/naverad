@@ -519,8 +519,16 @@ function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | n
               {displayed.map((kw, i) => (
                 <tr key={kw.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.625rem 0.5rem', color: i < 3 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: i < 3 ? 700 : 400 }}>{i + 1}</td>
-                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 600 }}>{kw.text}</td>
-                  <td style={{ padding: '0.625rem 0.5rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>{kw.campaignName || '-'}</td>
+                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700 }}>{kw.text}</td>
+                  <td style={{ padding: '0.625rem 0.5rem' }}>
+                    {kw.campaignName ? (
+                      <span style={{
+                        display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.6875rem', fontWeight: 600,
+                        background: kw.campaignName === '파워링크' ? '#dbeafe' : kw.campaignName === '파워컨텐츠' ? '#d1fae5' : '#f1f5f9',
+                        color: kw.campaignName === '파워링크' ? '#1e40af' : kw.campaignName === '파워컨텐츠' ? '#065f46' : '#475569',
+                      }}>{kw.campaignName === '플레이스' ? 'PLACE' : kw.campaignName}</span>
+                    ) : '-'}
+                  </td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--primary)' }}>{kw.clicks.toLocaleString()}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>{kw.impressions.toLocaleString()}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>{kw.ctr}%</td>
