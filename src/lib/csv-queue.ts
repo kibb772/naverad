@@ -49,6 +49,13 @@ async function processCSV(accountId: string, text: string) {
   const dataLines = lines.slice(2);
   const syncDates = new Set<string>();
 
+  console.log(`[CSV Queue] ${accountId}: 총 ${lines.length}줄, 데이터 ${dataLines.length}줄`);
+  if (dataLines.length > 0) {
+    console.log(`[CSV Queue] ${accountId}: 첫 데이터행: "${dataLines[0].substring(0, 100)}"`);
+    const testCols = parseCSVLine(dataLines[0]);
+    console.log(`[CSV Queue] ${accountId}: 파싱 결과 ${testCols.length}컬럼: [${testCols.slice(0, 4).join(' | ')}]`);
+  }
+
   // 1. CSV 전체 파싱 (메모리에서 처리 — 순식간)
   const rows: {
     accountId: string; campaignId: string; campaignName: string;
