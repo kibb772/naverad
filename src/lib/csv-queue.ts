@@ -91,11 +91,21 @@ async function processCSV(accountId: string, text: string) {
 
   console.log(`[CSV Queue] ${accountId}: ${rows.length}행 파싱 완료, DB 저장 시작`);
 
-  // 2. 기존 CSV 데이터 삭제 (같은 keywordId+date 조합이 다른 accountId로 존재할 수 있으므로 csv- 접두사 전체 삭제)
+  // 2. 기존 CSV 데이터 삭제 (해당 계정의 csv- 접두사 데이터만)
   const deleted = await prisma.keywordDailyStat.deleteMany({
-    where: { keywordId: { startsWith: 'csv-' } },
+    where: { accountId, keywordId: { startsWith: 'csv-' } },
   });
   console.log(`[CSV Queue] ${accountId}: 기존 CSV 데이터 ${deleted.count}행 삭제`);
+
+  // 2-1. 같은 계정+같은 날짜의 API 수집 데이터도 삭제 (중복 방지)
+  // CSV에 있는 날짜에 대해서만 API 데이터 제거
+  for (const dateStr of syncDates) {
+    const date = new Date(dateStr + 'T00:00:00.000Z');
+    await prisma.keywordDailyStat.deleteMany({
+      where: { accountId, date, keywordId: { not: { startsWith: 'csv-' } } },
+    });
+  }
+  console.log(`[CSV Queue] ${accountId}: CSV 날짜 범위의 API 데이터 삭제 완료`);
 
   // 3. bulk insert (createMany — DB 1번 호출)
   const BATCH = 1000;
