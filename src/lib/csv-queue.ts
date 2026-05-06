@@ -61,12 +61,23 @@ async function processCSV(accountId: string, text: string) {
     const cols = parseCSVLine(line);
     if (cols.length < 7) continue;
 
-    // 8컬럼: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+    // 8컬럼 형식 감지: 헤더 기반으로 컬럼 순서 결정
+    // 형식A: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+    // 형식B: 캠페인유형, 일별, 키워드, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
     // 7컬럼(구형): 키워드, 일별, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
     let keyword: string, dateStr: string, campaignType: string, impressionsStr: string, clicksStr: string, ctrStr: string, cpcStr: string, costStr: string;
 
     if (cols.length >= 8) {
-      [keyword, dateStr, campaignType, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+      // 헤더에서 컬럼 순서 감지 (첫 번째 컬럼이 날짜 형식이 아니면 캠페인유형)
+      // 두 번째 컬럼이 날짜 형식(YYYY.MM.DD)이면 형식B (캠페인유형, 일별, 키워드, ...)
+      const secondCol = cols[1].replace(/\.$/, '');
+      if (/^\d{4}\.\d{2}\.\d{2}$/.test(secondCol)) {
+        // 형식B: 캠페인유형, 일별, 키워드, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+        [campaignType, dateStr, keyword, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+      } else {
+        // 형식A: 키워드, 일별, 캠페인유형, 노출수, 클릭수, 클릭률, 평균CPC, 총비용
+        [keyword, dateStr, campaignType, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
+      }
     } else {
       [keyword, dateStr, impressionsStr, clicksStr, ctrStr, cpcStr, costStr] = cols;
       campaignType = '';
