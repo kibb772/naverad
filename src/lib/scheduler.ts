@@ -123,7 +123,7 @@ async function syncAccountData(account: {
     if (jobStatus === 'BUILT' || jobStatus === 'READY' || jobStatus === 'DONE') {
       downloadUrl = (status.downloadUrl || status.reportUrl || '') as string;
       reportReady = true;
-      console.log(`[Scheduler] ${account.customerId}: StatReport 준비 완료`);
+      console.log(`[Scheduler] ${account.customerId}: StatReport 준비 완료 (downloadUrl: ${downloadUrl ? 'Y' : 'N'})`);
       break;
     } else if (jobStatus === 'FAILED' || jobStatus === 'ERROR') {
       console.error(`[Scheduler] ${account.customerId}: StatReport 실패 (${jobStatus})`);
@@ -132,33 +132,38 @@ async function syncAccountData(account: {
     // RUNNING, WAITING 등은 계속 대기
   }
 
-  if (!reportReady || !downloadUrl) {
-    console.log(`[Scheduler] ${account.customerId}: StatReport 폴백 → 기존 방식`);
+  if (!reportReady) {
+    console.log(`[Scheduler] ${account.customerId}: StatReport 준비 안됨 → 기존 방식`);
     return await syncAccountDataLegacy(naverAds, account, syncDate);
   }
 
-  // 3. 보고서 다운로드 (TSV 형식)
+  // 3. 보고서 다운로드 (API 다운로드 우선, URL 폴백)
   let tsvText = '';
   try {
     const downloadResult = await naverAds.getStatReportDownload(reportJobId);
+    console.log(`[Scheduler] ${account.customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataLength=${String(downloadResult.data || '').length}`);
     if (downloadResult.success && downloadResult.data) {
       tsvText = typeof downloadResult.data === 'string'
         ? downloadResult.data
         : JSON.stringify(downloadResult.data);
     }
-  } catch {
-    // 다운로드 URL로 직접 fetch
+  } catch (dlErr) {
+    console.error(`[Scheduler] ${account.customerId}: 다운로드 API 실패`, dlErr);
+  }
+
+  // API 다운로드 실패 시 URL로 직접 fetch
+  if ((!tsvText || tsvText.length < 10) && downloadUrl) {
     try {
       const res = await fetch(downloadUrl);
       tsvText = await res.text();
+      console.log(`[Scheduler] ${account.customerId}: URL 다운로드 결과: ${tsvText.length}자`);
     } catch (e) {
-      console.error(`[Scheduler] ${account.customerId}: 보고서 다운로드 실패`, e);
-      return await syncAccountDataLegacy(naverAds, account, syncDate);
+      console.error(`[Scheduler] ${account.customerId}: URL 다운로드 실패`, e);
     }
   }
 
   if (!tsvText || tsvText.length < 10) {
-    console.log(`[Scheduler] ${account.customerId}: 보고서 데이터 없음, 폴백`);
+    console.log(`[Scheduler] ${account.customerId}: 보고서 데이터 없음 → 기존 방식`);
     return await syncAccountDataLegacy(naverAds, account, syncDate);
   }
 

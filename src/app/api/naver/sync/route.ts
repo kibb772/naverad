@@ -41,7 +41,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
       if (jobStatus === 'BUILT' || jobStatus === 'READY' || jobStatus === 'DONE') {
         downloadUrl = (status.downloadUrl || status.reportUrl || '') as string;
         reportReady = true;
-        console.log(`[Sync] ${customerId}: StatReport 준비 완료`);
+        console.log(`[Sync] ${customerId}: StatReport 준비 완료 (downloadUrl: ${downloadUrl ? 'Y' : 'N'})`);
         break;
       } else if (jobStatus === 'FAILED' || jobStatus === 'ERROR') {
         console.error(`[Sync] ${customerId}: StatReport 실패 (${jobStatus})`);
@@ -49,31 +49,39 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
       }
     }
 
-    if (!reportReady || !downloadUrl) {
-      console.log(`[Sync] ${customerId}: StatReport 폴백 → 키워드 개별 조회`);
+    if (!reportReady) {
+      console.log(`[Sync] ${customerId}: StatReport 준비 안됨 → 키워드 개별 조회`);
       return await syncViaKeywords(naverAds, accountId, customerId, syncDate);
     }
 
-    // 3. 보고서 다운로드
+    // 3. 보고서 다운로드 (API 다운로드 우선, URL 폴백)
     let tsvText = '';
     try {
       const downloadResult = await naverAds.getStatReportDownload(reportJobId);
+      console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}`);
       if (downloadResult.success && downloadResult.data) {
         tsvText = typeof downloadResult.data === 'string'
           ? downloadResult.data
           : JSON.stringify(downloadResult.data);
       }
-    } catch {
+    } catch (dlErr) {
+      console.error(`[Sync] ${customerId}: 다운로드 API 실패`, dlErr);
+    }
+
+    // API 다운로드 실패 시 URL로 직접 fetch
+    if ((!tsvText || tsvText.length < 10) && downloadUrl) {
       try {
+        console.log(`[Sync] ${customerId}: URL로 직접 다운로드 시도: ${downloadUrl.substring(0, 80)}`);
         const res = await fetch(downloadUrl);
         tsvText = await res.text();
+        console.log(`[Sync] ${customerId}: URL 다운로드 결과: ${tsvText.length}자`);
       } catch (e) {
-        console.error(`[Sync] ${customerId}: 보고서 다운로드 실패`, e);
-        return await syncViaKeywords(naverAds, accountId, customerId, syncDate);
+        console.error(`[Sync] ${customerId}: URL 다운로드 실패`, e);
       }
     }
 
     if (!tsvText || tsvText.length < 10) {
+      console.log(`[Sync] ${customerId}: 보고서 데이터 없음 (${tsvText?.length || 0}자) → 키워드 개별 조회`);
       return await syncViaKeywords(naverAds, accountId, customerId, syncDate);
     }
 
