@@ -58,7 +58,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
     let tsvText = '';
     try {
       const downloadResult = await naverAds.getStatReportDownload(reportJobId);
-      console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}, preview=${String(downloadResult.data || '').substring(0, 200)}`);
+      console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}, preview=${String(downloadResult.data || '').substring(0, 300)}`);
       if (downloadResult.success && downloadResult.data) {
         tsvText = String(downloadResult.data);
       }
@@ -91,11 +91,16 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
 
     // 4. TSV 파싱
     const lines = tsvText.split('\n').filter((l) => l.trim().length > 0);
+    console.log(`[Sync] ${customerId}: 파싱 시작 - ${lines.length}줄, 첫줄: "${lines[0]?.substring(0, 200)}", 둘째줄: "${lines[1]?.substring(0, 200)}"`);
     if (lines.length < 2) {
+      console.log(`[Sync] ${customerId}: 줄 수 부족 (${lines.length}줄) → 폴백`);
       return await syncViaKeywords(naverAds, accountId, customerId, syncDate);
     }
 
-    const headers = lines[0].split('\t').map((h) => h.trim().replace(/"/g, ''));
+    // TSV 또는 CSV 자동 감지
+    const delimiter = lines[0].includes('\t') ? '\t' : ',';
+    const headers = lines[0].split(delimiter).map((h) => h.trim().replace(/"/g, ''));
+    console.log(`[Sync] ${customerId}: 구분자=${delimiter === '\t' ? 'TAB' : 'COMMA'}, 헤더=${headers.slice(0, 5).join(' | ')}`);
     const rows: {
       accountId: string; campaignId: string; campaignName: string;
       adGroupId: string; adGroupName: string; keywordId: string;
@@ -104,7 +109,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
     }[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const cols = lines[i].split('\t').map((c) => c.trim().replace(/"/g, ''));
+      const cols = lines[i].split(delimiter).map((c) => c.trim().replace(/"/g, ''));
       const row: Record<string, string> = {};
       headers.forEach((h, idx) => { row[h] = cols[idx] || ''; });
 
