@@ -325,9 +325,11 @@ async function runDailySync() {
     return;
   }
 
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const syncDate = yesterday.toISOString().slice(0, 10);
+  // KST 기준 어제 날짜 계산
+  const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const yesterdayKST = new Date(nowKST);
+  yesterdayKST.setDate(yesterdayKST.getDate() - 1);
+  const syncDate = yesterdayKST.toISOString().slice(0, 10);
 
   for (const account of accounts) {
     try {
@@ -435,9 +437,11 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
 
 // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립/재시작 대응)
 async function runDailySyncIfMissing() {
-  const yesterday = new Date();
-  yesterday.setDate(yesterday.getDate() - 1);
-  const syncDate = yesterday.toISOString().slice(0, 10);
+  // KST 기준 어제 날짜 계산
+  const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const yesterdayKST = new Date(nowKST);
+  yesterdayKST.setDate(yesterdayKST.getDate() - 1);
+  const syncDate = yesterdayKST.toISOString().slice(0, 10);
 
   const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
   if (accounts.length === 0) return;
