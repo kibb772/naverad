@@ -250,7 +250,7 @@ async function syncViaKeywords(naverAds: NaverAdsService, accountId: string, cus
 
 export async function POST(req: NextRequest) {
   try {
-    const { apiKey, secretKey, customerId, accountId, date } = await req.json();
+    const { apiKey, secretKey, customerId, accountId, date, force } = await req.json();
 
     if (!apiKey || !secretKey || !customerId || !accountId) {
       return NextResponse.json({ error: '필수 파라미터가 누락되었습니다.' }, { status: 400 });
@@ -266,8 +266,18 @@ export async function POST(req: NextRequest) {
     const existing = await prisma.syncLog.findUnique({
       where: { accountId_date: { accountId, date: new Date(syncDate) } },
     });
-    if (existing) {
+
+    if (existing && !force) {
       return NextResponse.json({ message: `${syncDate} 데이터는 이미 수집되었습니다.`, skipped: true });
+    }
+
+    // 강제 재수집: 기존 데이터 삭제
+    if (existing && force) {
+      await prisma.syncLog.delete({ where: { accountId_date: { accountId, date: new Date(syncDate) } } });
+      await prisma.keywordDailyStat.deleteMany({
+        where: { accountId, date: new Date(syncDate + 'T00:00:00.000Z'), keywordId: { not: { startsWith: 'csv-' } } },
+      });
+      console.log(`[Sync] ${customerId}: ${syncDate} 기존 데이터 삭제 (강제 재수집)`);
     }
 
     const naverAds = new NaverAdsService({ apiKey, secretKey, customerId });

@@ -437,8 +437,9 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
     setSyncing(true);
 
     try {
-      // 어제 날짜 수집
-      const yesterday = new Date();
+      // KST 기준 어제 날짜
+      const now = new Date();
+      const yesterday = new Date(now);
       yesterday.setDate(yesterday.getDate() - 1);
       const syncDate = yesterday.toISOString().slice(0, 10);
 
@@ -454,7 +455,20 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
 
       const data = await res.json();
       if (data.skipped) {
-        alert(`${syncDate} 데이터는 이미 수집되었습니다.`);
+        // 이미 수집됨 → 재수집 확인
+        if (confirm(`${syncDate} 데이터가 이미 있습니다. 삭제 후 재수집할까요?`)) {
+          const reRes = await fetch('/api/naver/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              apiKey: account.apiKey, secretKey: account.secretKey,
+              customerId: account.customerId, accountId: account.id,
+              date: syncDate, force: true,
+            }),
+          });
+          const reData = await reRes.json();
+          alert(reData.message || '재수집을 시작했습니다. 잠시 후 새로고침하면 반영됩니다.');
+        }
       } else {
         alert(`${syncDate} 데이터 수집을 시작했습니다. 잠시 후 새로고침하면 반영됩니다.`);
         // 다시 조회
