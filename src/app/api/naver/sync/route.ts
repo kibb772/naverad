@@ -42,6 +42,14 @@ export async function POST(req: NextRequest) {
     for (const camp of campaigns) {
       const campId = (camp.nccCampaignId || camp.campaignId) as string;
       const campName = camp.name as string;
+      // 캠페인 유형 매핑
+      const campType = (camp.campaignTp || camp.campaignType || '') as string;
+      const campaignTypeLabel = campType === 'WEB_SITE' ? '파워링크'
+        : campType === 'SHOPPING' ? '쇼핑검색'
+        : campType === 'POWER_CONTENTS' ? '파워컨텐츠'
+        : campType === 'BRAND_SEARCH' ? '브랜드검색'
+        : campType === 'PLACE' ? '플레이스'
+        : campType || campName;
 
       const agResult = await naverAds.getAdGroups(campId);
       if (!agResult.success || !Array.isArray(agResult.data)) continue;
@@ -100,7 +108,7 @@ export async function POST(req: NextRequest) {
               create: {
                 accountId,
                 campaignId: campId,
-                campaignName: campName,
+                campaignName: campaignTypeLabel,
                 adGroupId: agId,
                 adGroupName: agName,
                 keywordId: s.kwId,

@@ -393,7 +393,7 @@ export default function DashboardPage() {
       {activeTab === 'overview' && (
         <>
           <OverviewTab campaigns={d.campaigns} account={selectedAccount} dateRange={dateRange} />
-          <KeywordTopSection account={selectedAccount} dateRange={dateRange} />
+          <KeywordTopSection account={selectedAccount} dateRange={dateRange} campaigns={d.campaigns} />
         </>
       )}
       </>
@@ -403,7 +403,7 @@ export default function DashboardPage() {
 }
 
 /* ── 키워드 Top 30 섹션 ── */
-function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | null; dateRange?: { since: string; until: string } }) {
+function KeywordTopSection({ account, dateRange, campaigns }: { account?: LinkedAccount | null; dateRange?: { since: string; until: string }; campaigns?: { campaignType?: string; clicks: number }[] }) {
   const [keywords, setKeywords] = useState<{ id: string; text: string; campaignName?: string; adGroupName?: string; cost: number; impressions: number; clicks: number; ctr: number; cpc: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
@@ -478,6 +478,35 @@ function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | n
 
   const displayed = showAll ? keywords : keywords.slice(0, 10);
 
+  // 캠페인 유형별 클릭 차이 계산 (확장 키워드 '-' 표시용)
+  const CAMPAIGN_TYPE_MAP: Record<string, string> = {
+    WEB_SITE: '파워링크', SHOPPING: '쇼핑검색', POWER_CONTENTS: '파워컨텐츠',
+    BRAND_SEARCH: '브랜드검색', PLACE: '플레이스',
+  };
+  const missingClicks: { text: string; campaignName: string; clicks: number }[] = [];
+  if (campaigns && keywords.length > 0) {
+    // 캠페인 유형별 전체 클릭
+    const campClicksByType: Record<string, number> = {};
+    for (const c of campaigns) {
+      const typeLabel = CAMPAIGN_TYPE_MAP[c.campaignType || 'WEB_SITE'] || c.campaignType || '';
+      campClicksByType[typeLabel] = (campClicksByType[typeLabel] || 0) + c.clicks;
+    }
+    // 키워드 유형별 클릭 합산
+    const kwClicksByType: Record<string, number> = {};
+    for (const kw of keywords) {
+      const type = kw.campaignName || '';
+      kwClicksByType[type] = (kwClicksByType[type] || 0) + kw.clicks;
+    }
+    // 차이 계산
+    for (const [type, totalClicks] of Object.entries(campClicksByType)) {
+      const kwClicks = kwClicksByType[type] || 0;
+      const diff = totalClicks - kwClicks;
+      if (diff > 0) {
+        missingClicks.push({ text: '-', campaignName: type, clicks: diff });
+      }
+    }
+  }
+
   return (
     <div style={{ marginTop: '2rem' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
@@ -534,6 +563,24 @@ function KeywordTopSection({ account, dateRange }: { account?: LinkedAccount | n
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>{kw.ctr}%</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>₩{kw.cpc.toLocaleString()}</td>
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>₩{kw.cost.toLocaleString()}</td>
+                </tr>
+              ))}
+              {missingClicks.map((mc, i) => (
+                <tr key={`missing-${mc.campaignName}-${i}`} style={{ borderBottom: '1px solid var(--border)', background: '#fafafa' }}>
+                  <td style={{ padding: '0.625rem 0.5rem', color: 'var(--text-muted)' }}>-</td>
+                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700, color: 'var(--text-muted)' }}>-</td>
+                  <td style={{ padding: '0.625rem 0.5rem' }}>
+                    <span style={{
+                      display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.6875rem', fontWeight: 600,
+                      background: mc.campaignName === '파워링크' ? '#dbeafe' : mc.campaignName === '파워컨텐츠' ? '#d1fae5' : '#f1f5f9',
+                      color: mc.campaignName === '파워링크' ? '#1e40af' : mc.campaignName === '파워컨텐츠' ? '#065f46' : '#475569',
+                    }}>{mc.campaignName === '플레이스' ? 'PLACE' : mc.campaignName}</span>
+                  </td>
+                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)' }}>{mc.clicks.toLocaleString()}</td>
+                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
+                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
+                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
+                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
                 </tr>
               ))}
             </tbody>

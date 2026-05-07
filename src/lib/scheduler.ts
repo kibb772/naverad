@@ -250,6 +250,13 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
   for (const camp of campResult.data as Record<string, unknown>[]) {
     const campId = (camp.nccCampaignId || camp.campaignId) as string;
     const campName = camp.name as string;
+    const campType = (camp.campaignTp || camp.campaignType || '') as string;
+    const campaignTypeLabel = campType === 'WEB_SITE' ? '파워링크'
+      : campType === 'SHOPPING' ? '쇼핑검색'
+      : campType === 'POWER_CONTENTS' ? '파워컨텐츠'
+      : campType === 'BRAND_SEARCH' ? '브랜드검색'
+      : campType === 'PLACE' ? '플레이스'
+      : campType || campName;
 
     const agResult = await naverAds.getAdGroups(campId);
     if (!agResult.success || !Array.isArray(agResult.data)) continue;
@@ -297,7 +304,7 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
           await prisma.keywordDailyStat.upsert({
             where: { keywordId_date: { keywordId: s.kwId, date: new Date(syncDate) } },
             update: { impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },
-            create: { accountId: account.id, campaignId: campId, campaignName: campName, adGroupId: agId, adGroupName: agName, keywordId: s.kwId, keywordText: s.kwText, date: new Date(syncDate), impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },
+            create: { accountId: account.id, campaignId: campId, campaignName: campaignTypeLabel, adGroupId: agId, adGroupName: agName, keywordId: s.kwId, keywordText: s.kwText, date: new Date(syncDate), impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },
           });
           totalKeywords++;
         }
