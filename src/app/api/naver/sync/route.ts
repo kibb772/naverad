@@ -58,7 +58,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
     let tsvText = '';
     try {
       const downloadResult = await naverAds.getStatReportDownload(reportJobId);
-      console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}`);
+      console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}, preview=${String(downloadResult.data || '').substring(0, 200)}`);
       if (downloadResult.success && downloadResult.data) {
         tsvText = typeof downloadResult.data === 'string'
           ? downloadResult.data
@@ -74,7 +74,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
         console.log(`[Sync] ${customerId}: URL로 직접 다운로드 시도: ${downloadUrl.substring(0, 80)}`);
         const res = await fetch(downloadUrl);
         tsvText = await res.text();
-        console.log(`[Sync] ${customerId}: URL 다운로드 결과: ${tsvText.length}자`);
+        console.log(`[Sync] ${customerId}: URL 다운로드 결과: ${tsvText.length}자, 내용: ${tsvText.substring(0, 200)}`);
       } catch (e) {
         console.error(`[Sync] ${customerId}: URL 다운로드 실패`, e);
       }
