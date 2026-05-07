@@ -60,9 +60,7 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
       const downloadResult = await naverAds.getStatReportDownload(reportJobId);
       console.log(`[Sync] ${customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataType=${typeof downloadResult.data}, dataLength=${String(downloadResult.data || '').length}, preview=${String(downloadResult.data || '').substring(0, 200)}`);
       if (downloadResult.success && downloadResult.data) {
-        tsvText = typeof downloadResult.data === 'string'
-          ? downloadResult.data
-          : JSON.stringify(downloadResult.data);
+        tsvText = String(downloadResult.data);
       }
     } catch (dlErr) {
       console.error(`[Sync] ${customerId}: 다운로드 API 실패`, dlErr);

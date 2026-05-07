@@ -143,9 +143,7 @@ async function syncAccountData(account: {
     const downloadResult = await naverAds.getStatReportDownload(reportJobId);
     console.log(`[Scheduler] ${account.customerId}: 다운로드 API 응답 success=${downloadResult.success}, dataLength=${String(downloadResult.data || '').length}`);
     if (downloadResult.success && downloadResult.data) {
-      tsvText = typeof downloadResult.data === 'string'
-        ? downloadResult.data
-        : JSON.stringify(downloadResult.data);
+      tsvText = String(downloadResult.data);
     }
   } catch (dlErr) {
     console.error(`[Scheduler] ${account.customerId}: 다운로드 API 실패`, dlErr);
