@@ -191,14 +191,23 @@ async function syncAccountData(account: {
     const clicks = parseInt(row['clkCnt'] || row['clicks'] || '0') || 0;
     const cost = parseInt(row['salesAmt'] || row['cost'] || row['ccnt'] || '0') || 0;
 
+    // 캠페인 유형 매핑
+    const rawCampType = row['campaignTp'] || row['campaignType'] || '';
+    const campaignTypeLabel = rawCampType === 'WEB_SITE' || rawCampType === '1' ? '파워링크'
+      : rawCampType === 'SHOPPING' || rawCampType === '2' ? '쇼핑검색'
+      : rawCampType === 'POWER_CONTENTS' || rawCampType === '3' ? '파워컨텐츠'
+      : rawCampType === 'BRAND_SEARCH' || rawCampType === '4' ? '브랜드검색'
+      : rawCampType === 'PLACE' || rawCampType === '6' ? '플레이스'
+      : rawCampType || row['campaignName'] || row['nccCampaignName'] || '';
+
     rows.push({
       accountId: account.id,
       campaignId: row['nccCampaignId'] || row['campaignId'] || '',
-      campaignName: row['campaignName'] || row['nccCampaignName'] || '',
+      campaignName: campaignTypeLabel,
       adGroupId: row['nccAdgroupId'] || row['adgroupId'] || '',
       adGroupName: row['adgroupName'] || row['nccAdgroupName'] || '',
       keywordId: keywordId || `report-${keywordText}`,
-      keywordText,
+      keywordText: keywordText || '-',
       date: new Date(syncDate + 'T00:00:00.000Z'),
       impressions,
       clicks,

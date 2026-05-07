@@ -456,7 +456,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
       if (data.skipped) {
         alert(`${syncDate} 데이터는 이미 수집되었습니다.`);
       } else {
-        alert(`${syncDate} 데이터 수집 완료! (키워드 ${data.keywordCount}개)`);
+        alert(`${syncDate} 데이터 수집을 시작했습니다. 잠시 후 새로고침하면 반영됩니다.`);
         // 다시 조회
         const kwRes = await fetch('/api/naver/keywords-cached', {
           method: 'POST',
