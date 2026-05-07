@@ -483,7 +483,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
     WEB_SITE: '파워링크', SHOPPING: '쇼핑검색', POWER_CONTENTS: '파워컨텐츠',
     BRAND_SEARCH: '브랜드검색', PLACE: '플레이스',
   };
-  const missingClicks: { text: string; campaignName: string; clicks: number }[] = [];
+  let allKeywordsWithMissing = [...keywords];
   if (campaigns && keywords.length > 0) {
     // 캠페인 유형별 전체 클릭
     const campClicksByType: Record<string, number> = {};
@@ -497,15 +497,21 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
       const type = kw.campaignName || '';
       kwClicksByType[type] = (kwClicksByType[type] || 0) + kw.clicks;
     }
-    // 차이 계산
+    // 차이를 '-' 키워드로 추가
     for (const [type, totalClicks] of Object.entries(campClicksByType)) {
       const kwClicks = kwClicksByType[type] || 0;
       const diff = totalClicks - kwClicks;
       if (diff > 0) {
-        missingClicks.push({ text: '-', campaignName: type, clicks: diff });
+        allKeywordsWithMissing.push({
+          id: `missing-${type}`, text: '-', campaignName: type, adGroupName: '',
+          cost: 0, impressions: 0, clicks: diff, ctr: 0, cpc: 0,
+        });
       }
     }
+    // 클릭수 기준 재정렬
+    allKeywordsWithMissing.sort((a, b) => b.clicks - a.clicks);
   }
+  const finalDisplayed = showAll ? allKeywordsWithMissing : allKeywordsWithMissing.slice(0, 10);
 
   return (
     <div style={{ marginTop: '2rem' }}>
@@ -545,7 +551,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
               </tr>
             </thead>
             <tbody>
-              {displayed.map((kw, i) => (
+              {finalDisplayed.map((kw, i) => (
                 <tr key={kw.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.625rem 0.5rem', color: i < 3 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: i < 3 ? 700 : 400 }}>{i + 1}</td>
                   <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700 }}>{kw.text}</td>
@@ -565,31 +571,13 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
                   <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right' }}>₩{kw.cost.toLocaleString()}</td>
                 </tr>
               ))}
-              {missingClicks.map((mc, i) => (
-                <tr key={`missing-${mc.campaignName}-${i}`} style={{ borderBottom: '1px solid var(--border)', background: '#fafafa' }}>
-                  <td style={{ padding: '0.625rem 0.5rem', color: 'var(--text-muted)' }}>-</td>
-                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700, color: 'var(--text-muted)' }}>-</td>
-                  <td style={{ padding: '0.625rem 0.5rem' }}>
-                    <span style={{
-                      display: 'inline-block', padding: '0.2rem 0.625rem', borderRadius: '9999px', fontSize: '0.6875rem', fontWeight: 600,
-                      background: mc.campaignName === '파워링크' ? '#dbeafe' : mc.campaignName === '파워컨텐츠' ? '#d1fae5' : '#f1f5f9',
-                      color: mc.campaignName === '파워링크' ? '#1e40af' : mc.campaignName === '파워컨텐츠' ? '#065f46' : '#475569',
-                    }}>{mc.campaignName === '플레이스' ? 'PLACE' : mc.campaignName}</span>
-                  </td>
-                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', fontWeight: 600, color: 'var(--text-muted)' }}>{mc.clicks.toLocaleString()}</td>
-                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
-                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
-                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
-                  <td style={{ padding: '0.625rem 0.5rem', textAlign: 'right', color: 'var(--text-muted)' }}>-</td>
-                </tr>
-              ))}
             </tbody>
           </table>
 
-          {keywords.length > 10 && (
+          {allKeywordsWithMissing.length > 10 && (
             <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
               <button onClick={() => setShowAll(!showAll)} className="btn btn-outline" style={{ fontSize: '0.8125rem' }} data-testid="toggle-keywords-btn">
-                {showAll ? `접기 (10개만 보기)` : `더보기 (${keywords.length}개 전체)`}
+                {showAll ? `접기 (10개만 보기)` : `더보기 (${allKeywordsWithMissing.length}개 전체)`}
               </button>
             </div>
           )}
