@@ -66,13 +66,19 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
       console.error(`[Sync] ${customerId}: 다운로드 API 실패`, dlErr);
     }
 
-    // API 다운로드 실패 시 URL로 직접 fetch
+    // API 다운로드 실패 시 URL로 직접 fetch (인증 헤더 포함)
     if ((!tsvText || tsvText.length < 10) && downloadUrl) {
       try {
         console.log(`[Sync] ${customerId}: URL로 직접 다운로드 시도: ${downloadUrl.substring(0, 80)}`);
-        const res = await fetch(downloadUrl);
-        tsvText = await res.text();
-        console.log(`[Sync] ${customerId}: URL 다운로드 결과: ${tsvText.length}자, 내용: ${tsvText.substring(0, 200)}`);
+        const dlResult = await naverAds.requestPublic<string>('GET', downloadUrl.replace('https://api.searchad.naver.com', ''));
+        if (dlResult.success && dlResult.data) {
+          tsvText = String(dlResult.data);
+        } else {
+          // 인증 없이도 시도
+          const res = await fetch(downloadUrl);
+          tsvText = await res.text();
+        }
+        console.log(`[Sync] ${customerId}: URL 다운로드 결과: ${tsvText.length}자`);
       } catch (e) {
         console.error(`[Sync] ${customerId}: URL 다운로드 실패`, e);
       }

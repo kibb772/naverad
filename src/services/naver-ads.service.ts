@@ -182,22 +182,43 @@ export class NaverAdsService {
   }
 
   async getStatReportDownload(reportJobId: string) {
-    // StatReport 다운로드는 TSV 텍스트를 반환하므로 별도 처리
+    // 먼저 /stat-reports/{id}/download 시도
     try {
       const path = `/stat-reports/${reportJobId}/download`;
       const headers = this.getHeaders('GET', path);
       const res = await fetch(`${this.baseUrl}${path}`, { method: 'GET', headers });
 
-      if (!res.ok) {
-        const errorText = await res.text();
-        return { success: false, error: `Download Error ${res.status}: ${errorText}` };
+      if (res.ok) {
+        const text = await res.text();
+        if (text && text.length > 10) {
+          return { success: true, data: text };
+        }
       }
+    } catch { /* 무시 */ }
 
-      const text = await res.text();
-      return { success: true, data: text };
-    } catch (error) {
-      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
-    }
+    // 폴백: /report-download?authtoken 형태 URL을 상태 조회에서 가져와서 시도
+    try {
+      const statusPath = `/stat-reports/${reportJobId}`;
+      const statusHeaders = this.getHeaders('GET', statusPath);
+      const statusRes = await fetch(`${this.baseUrl}${statusPath}`, { method: 'GET', headers: statusHeaders });
+
+      if (statusRes.ok) {
+        const status = await statusRes.json();
+        const dlUrl = (status.downloadUrl || status.reportUrl || '') as string;
+        if (dlUrl) {
+          // downloadUrl에 인증 헤더를 붙여서 호출
+          const dlPath = dlUrl.replace(this.baseUrl, '');
+          const dlHeaders = this.getHeaders('GET', dlPath.split('?')[0]);
+          const dlRes = await fetch(dlUrl.startsWith('http') ? dlUrl : `${this.baseUrl}${dlPath}`, { method: 'GET', headers: dlHeaders });
+          if (dlRes.ok) {
+            const text = await dlRes.text();
+            return { success: true, data: text };
+          }
+        }
+      }
+    } catch { /* 무시 */ }
+
+    return { success: false, error: 'Download failed' };
   }
 
   // 비즈머니 잔액 조회
