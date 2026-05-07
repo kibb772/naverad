@@ -182,7 +182,22 @@ export class NaverAdsService {
   }
 
   async getStatReportDownload(reportJobId: string) {
-    return this.request('GET', `/stat-reports/${reportJobId}/download`);
+    // StatReport 다운로드는 TSV 텍스트를 반환하므로 별도 처리
+    try {
+      const path = `/stat-reports/${reportJobId}/download`;
+      const headers = this.getHeaders('GET', path);
+      const res = await fetch(`${this.baseUrl}${path}`, { method: 'GET', headers });
+
+      if (!res.ok) {
+        const errorText = await res.text();
+        return { success: false, error: `Download Error ${res.status}: ${errorText}` };
+      }
+
+      const text = await res.text();
+      return { success: true, data: text };
+    } catch (error) {
+      return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+    }
   }
 
   // 비즈머니 잔액 조회
