@@ -165,14 +165,16 @@ async function syncAccountData(account: {
     return await syncAccountDataLegacy(naverAds, account, syncDate);
   }
 
-  // 4. TSV 파싱 → DB 저장
+  // 4. StatReport 파싱 → DB 저장
   const lines = tsvText.split('\n').filter((l) => l.trim().length > 0);
-  if (lines.length < 2) {
+  if (lines.length < 1) {
     return await syncAccountDataLegacy(naverAds, account, syncDate);
   }
 
-  // 첫 줄은 헤더
-  const headers = lines[0].split('\t').map((h) => h.trim().replace(/"/g, ''));
+  // 형식 감지: 헤더가 있는지 확인
+  const firstLine = lines[0];
+  const hasHeader = firstLine.includes('impCnt') || firstLine.includes('clkCnt') || firstLine.includes('keyword') || firstLine.includes('nccKeywordId');
+
   const rows: {
     accountId: string; campaignId: string; campaignName: string;
     adGroupId: string; adGroupName: string; keywordId: string;
@@ -180,44 +182,138 @@ async function syncAccountData(account: {
     clicks: number; cost: number; cpc: number; ctr: number;
   }[] = [];
 
-  for (let i = 1; i < lines.length; i++) {
-    const cols = lines[i].split('\t').map((c) => c.trim().replace(/"/g, ''));
-    const row: Record<string, string> = {};
-    headers.forEach((h, idx) => { row[h] = cols[idx] || ''; });
+  if (hasHeader) {
+    // 헤더 있는 형식 (TSV/CSV)
+    const delimiter = firstLine.includes('\t') ? '\t' : ',';
+    const headers = firstLine.split(delimiter).map((h) => h.trim().replace(/"/g, ''));
 
-    // 키워드 관련 필드 매핑 (네이버 StatReport 필드명)
-    const keywordId = row['nccKeywordId'] || row['keywordId'] || row['nccCriterionId'] || '';
-    const keywordText = row['keyword'] || row['criterionValue'] || row['keywordName'] || '';
-    if (!keywordId && !keywordText) continue;
+    for (let i = 1; i < lines.length; i++) {
+      const cols = lines[i].split(delimiter).map((c) => c.trim().replace(/"/g, ''));
+      const row: Record<string, string> = {};
+      headers.forEach((h, idx) => { row[h] = cols[idx] || ''; });
 
-    const impressions = parseInt(row['impCnt'] || row['impressions'] || '0') || 0;
-    const clicks = parseInt(row['clkCnt'] || row['clicks'] || '0') || 0;
-    const cost = parseInt(row['salesAmt'] || row['cost'] || row['ccnt'] || '0') || 0;
+      const keywordId = row['nccKeywordId'] || row['keywordId'] || row['nccCriterionId'] || '';
+      const keywordText = row['keyword'] || row['criterionValue'] || row['keywordName'] || '';
+      if (!keywordId && !keywordText) continue;
 
-    // 캠페인 유형 매핑
-    const rawCampType = row['campaignTp'] || row['campaignType'] || '';
-    const campaignTypeLabel = rawCampType === 'WEB_SITE' || rawCampType === '1' ? '파워링크'
-      : rawCampType === 'SHOPPING' || rawCampType === '2' ? '쇼핑검색'
-      : rawCampType === 'POWER_CONTENTS' || rawCampType === '3' ? '파워컨텐츠'
-      : rawCampType === 'BRAND_SEARCH' || rawCampType === '4' ? '브랜드검색'
-      : rawCampType === 'PLACE' || rawCampType === '6' ? '플레이스'
-      : rawCampType || row['campaignName'] || row['nccCampaignName'] || '';
+      const impressions = parseInt(row['impCnt'] || row['impressions'] || '0') || 0;
+      const clicks = parseInt(row['clkCnt'] || row['clicks'] || '0') || 0;
+      const cost = parseInt(row['salesAmt'] || row['cost'] || '0') || 0;
 
-    rows.push({
-      accountId: account.id,
-      campaignId: row['nccCampaignId'] || row['campaignId'] || '',
-      campaignName: campaignTypeLabel,
-      adGroupId: row['nccAdgroupId'] || row['adgroupId'] || '',
-      adGroupName: row['adgroupName'] || row['nccAdgroupName'] || '',
-      keywordId: keywordId || `report-${keywordText}`,
-      keywordText: keywordText || '-',
-      date: new Date(syncDate + 'T00:00:00.000Z'),
-      impressions,
-      clicks,
-      cost,
-      cpc: clicks > 0 ? Math.round(cost / clicks) : 0,
-      ctr: impressions > 0 ? +((clicks / impressions) * 100).toFixed(2) : 0,
-    });
+      const rawCampType = row['campaignTp'] || row['campaignType'] || '';
+      const campaignTypeLabel = rawCampType === 'WEB_SITE' || rawCampType === '1' ? '파워링크'
+        : rawCampType === 'SHOPPING' || rawCampType === '2' ? '쇼핑검색'
+        : rawCampType === 'POWER_CONTENTS' || rawCampType === '3' ? '파워컨텐츠'
+        : rawCampType === 'BRAND_SEARCH' || rawCampType === '4' ? '브랜드검색'
+        : rawCampType === 'PLACE' || rawCampType === '6' ? '플레이스'
+        : rawCampType || '';
+
+      rows.push({
+        accountId: account.id, campaignId: row['nccCampaignId'] || '',
+        campaignName: campaignTypeLabel, adGroupId: row['nccAdgroupId'] || '',
+        adGroupName: '', keywordId: keywordId || `report-${i}`,
+        keywordText: keywordText || '-',
+        date: new Date(syncDate + 'T00:00:00.000Z'), impressions, clicks, cost,
+        cpc: clicks > 0 ? Math.round(cost / clicks) : 0,
+        ctr: impressions > 0 ? +((clicks / impressions) * 100).toFixed(2) : 0,
+      });
+    }
+  } else {
+    // 헤더 없는 고정 형식 (AD_DETAIL)
+    // 먼저 키워드 마스터 매핑 구축 (ID → 텍스트)
+    console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 매핑 구축 중...`);
+    const keywordMap: Record<string, { text: string; campaignType: string }> = {};
+
+    try {
+      const campResult = await naverAds.getCampaigns();
+      if (campResult.success && Array.isArray(campResult.data)) {
+        for (const camp of campResult.data as Record<string, unknown>[]) {
+          const campId = (camp.nccCampaignId || camp.campaignId) as string;
+          const campType = (camp.campaignTp || camp.campaignType || '') as string;
+          const typeLabel = campType === 'WEB_SITE' ? '파워링크'
+            : campType === 'SHOPPING' ? '쇼핑검색'
+            : campType === 'POWER_CONTENTS' ? '파워컨텐츠'
+            : campType === 'BRAND_SEARCH' ? '브랜드검색'
+            : campType === 'PLACE' ? '플레이스' : campType || '';
+
+          const agResult = await naverAds.getAdGroups(campId);
+          if (!agResult.success || !Array.isArray(agResult.data)) continue;
+
+          for (const ag of agResult.data as Record<string, unknown>[]) {
+            const agId = (ag.nccAdgroupId || ag.adgroupId) as string;
+            const kwResult = await naverAds.getKeywords(agId);
+            if (!kwResult.success || !Array.isArray(kwResult.data)) continue;
+
+            for (const kw of kwResult.data as Record<string, unknown>[]) {
+              const kwId = (kw.nccKeywordId || kw.keywordId) as string;
+              const kwText = (kw.keyword || kw.text || kw.name) as string;
+              keywordMap[kwId] = { text: kwText, campaignType: typeLabel };
+            }
+          }
+
+          // 캠페인 ID → 유형 매핑도 저장
+          keywordMap[`camp-${campId}`] = { text: '', campaignType: typeLabel };
+        }
+      }
+    } catch (e) {
+      console.error(`[Scheduler] ${account.customerId}: 키워드 마스터 구축 실패`, e);
+    }
+
+    console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 ${Object.keys(keywordMap).length}개 매핑 완료`);
+
+    // StatReport 고정 형식 파싱
+    // 같은 keywordId의 통계를 합산 (디바이스별로 분리되어 있을 수 있음)
+    const statMap: Record<string, { campId: string; agId: string; kwId: string; impressions: number; clicks: number; cost: number }> = {};
+
+    for (const line of lines) {
+      const cols = line.trim().split(/\s+/);
+      if (cols.length < 15) continue;
+
+      // ID 패턴으로 필드 찾기
+      const campId = cols.find((c) => c.startsWith('cmp-')) || '';
+      const agId = cols.find((c) => c.startsWith('grp-')) || '';
+      const kwId = cols.find((c) => c.startsWith('nkw-')) || cols.find((c) => c.startsWith('crt-')) || '';
+
+      if (!campId) continue;
+
+      // 뒤에서 숫자 필드 추출 (마지막 5~6개가 통계)
+      const numFields = cols.slice(-5).map((c) => parseInt(c) || 0);
+      // 패턴: impressions clicks ? cost ?
+      const impressions = numFields[0] || 0;
+      const clicks = numFields[1] || 0;
+      const cost = numFields[3] || 0;
+
+      const key = kwId || `${campId}-${agId}-unknown`;
+      if (!statMap[key]) {
+        statMap[key] = { campId, agId, kwId: kwId || key, impressions: 0, clicks: 0, cost: 0 };
+      }
+      statMap[key].impressions += impressions;
+      statMap[key].clicks += clicks;
+      statMap[key].cost += cost;
+    }
+
+    // 매핑 적용하여 rows 생성
+    for (const [key, stat] of Object.entries(statMap)) {
+      const master = keywordMap[stat.kwId] || keywordMap[`camp-${stat.campId}`];
+      const campaignTypeLabel = master?.campaignType || '';
+      const keywordText = master?.text || '-';
+
+      rows.push({
+        accountId: account.id,
+        campaignId: stat.campId,
+        campaignName: campaignTypeLabel,
+        adGroupId: stat.agId,
+        adGroupName: '',
+        keywordId: stat.kwId,
+        keywordText,
+        date: new Date(syncDate + 'T00:00:00.000Z'),
+        impressions: stat.impressions,
+        clicks: stat.clicks,
+        cost: stat.cost,
+        cpc: stat.clicks > 0 ? Math.round(stat.cost / stat.clicks) : 0,
+        ctr: stat.impressions > 0 ? +((stat.clicks / stat.impressions) * 100).toFixed(2) : 0,
+      });
+    }
   }
 
   console.log(`[Scheduler] ${account.customerId}: StatReport ${rows.length}행 파싱 완료`);
