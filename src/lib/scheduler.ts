@@ -222,6 +222,12 @@ async function syncAccountData(account: {
 
   console.log(`[Scheduler] ${account.customerId}: StatReport ${rows.length}행 파싱 완료`);
 
+  // 파싱 결과가 0행이면 폴백
+  if (rows.length === 0) {
+    console.log(`[Scheduler] ${account.customerId}: StatReport 파싱 0행 → 기존 방식으로 폴백`);
+    return await syncAccountDataLegacy(naverAds, account, syncDate);
+  }
+
   // bulk insert
   if (rows.length > 0) {
     // 기존 데이터 삭제 (같은 날짜)
