@@ -410,6 +410,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
   const [loaded, setLoaded] = useState(false);
   const [showAll, setShowAll] = useState(false);
   const [syncInfo, setSyncInfo] = useState<{ syncedDays: number; lastSync: string | null }>({ syncedDays: 0, lastSync: null });
+  const [campaignTotals, setCampaignTotals] = useState<{ campaignName: string; clicks: number; impressions: number; cost: number }[]>([]);
 
   // DB에서 캐시된 데이터 즉시 조회
   useEffect(() => {
@@ -424,6 +425,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
       .then((r) => r.json())
       .then((data) => {
         setKeywords(data.keywords || []);
+        setCampaignTotals(data.campaignTotals || []);
         setSyncInfo({ syncedDays: data.syncedDays || 0, lastSync: data.lastSync });
         setLoaded(true);
       })
@@ -490,35 +492,37 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
     setSyncing(false);
   };
 
-  const displayed = showAll ? keywords : keywords.slice(0, 10);
-
-  // 캠페인 유형별 클릭 차이 계산 (확장 키워드 '-' 표시용)
-  const CAMPAIGN_TYPE_MAP: Record<string, string> = {
-    WEB_SITE: '파워링크', SHOPPING: '쇼핑검색', POWER_CONTENTS: '파워컨텐츠',
-    BRAND_SEARCH: '브랜드검색', PLACE: '플레이스',
-  };
+  // DB 캠페인별 합산과 키워드별 합산의 차이를 '-'로 표시
   let allKeywordsWithMissing = [...keywords];
-  if (campaigns && keywords.length > 0) {
-    // 캠페인 유형별 전체 클릭
-    const campClicksByType: Record<string, number> = {};
-    for (const c of campaigns) {
-      const typeLabel = CAMPAIGN_TYPE_MAP[c.campaignType || 'WEB_SITE'] || c.campaignType || '';
-      campClicksByType[typeLabel] = (campClicksByType[typeLabel] || 0) + c.clicks;
-    }
-    // 키워드 유형별 클릭 합산
-    const kwClicksByType: Record<string, number> = {};
+  if (campaignTotals.length > 0 && keywords.length > 0) {
+    // 키워드에서 '-'가 아닌 것만 캠페인별 합산
+    const kwClicksByType: Record<string, { clicks: number; impressions: number; cost: number }> = {};
     for (const kw of keywords) {
+      if (kw.text === '-') continue; // 이미 DB에 있는 '-'는 제외
       const type = kw.campaignName || '';
-      kwClicksByType[type] = (kwClicksByType[type] || 0) + kw.clicks;
+      if (!kwClicksByType[type]) kwClicksByType[type] = { clicks: 0, impressions: 0, cost: 0 };
+      kwClicksByType[type].clicks += kw.clicks;
+      kwClicksByType[type].impressions += kw.impressions;
+      kwClicksByType[type].cost += kw.cost;
     }
-    // 차이를 '-' 키워드로 추가
-    for (const [type, totalClicks] of Object.entries(campClicksByType)) {
-      const kwClicks = kwClicksByType[type] || 0;
-      const diff = totalClicks - kwClicks;
-      if (diff > 0) {
+    // DB에 '-' 키워드가 이미 있는지 확인
+    const existingDash = keywords.filter((kw) => kw.text === '-');
+    const existingDashTypes = new Set(existingDash.map((kw) => kw.campaignName));
+
+    // DB에 '-'가 없는 캠페인 유형에 대해서만 차이 계산
+    for (const ct of campaignTotals) {
+      if (existingDashTypes.has(ct.campaignName)) continue; // 이미 DB에 '-'가 있으면 스킵
+      const kwStats = kwClicksByType[ct.campaignName] || { clicks: 0, impressions: 0, cost: 0 };
+      const diffClicks = ct.clicks - kwStats.clicks;
+      const diffImpressions = ct.impressions - kwStats.impressions;
+      const diffCost = ct.cost - kwStats.cost;
+      if (diffClicks > 0) {
         allKeywordsWithMissing.push({
-          id: `missing-${type}`, text: '-', campaignName: type, adGroupName: '',
-          cost: 0, impressions: 0, clicks: diff, ctr: 0, cpc: 0,
+          id: `missing-${ct.campaignName}`, text: '-', campaignName: ct.campaignName, adGroupName: '',
+          clicks: diffClicks, impressions: diffImpressions > 0 ? diffImpressions : 0,
+          cost: diffCost > 0 ? diffCost : 0,
+          ctr: diffImpressions > 0 ? +((diffClicks / diffImpressions) * 100).toFixed(2) : 0,
+          cpc: diffClicks > 0 ? Math.round((diffCost > 0 ? diffCost : 0) / diffClicks) : 0,
         });
       }
     }
@@ -549,7 +553,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
         <div className="card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>키워드 데이터가 없습니다.</div>
       )}
 
-      {displayed.length > 0 && (
+      {finalDisplayed.length > 0 && (
         <div style={{ overflowX: 'auto' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.875rem' }}>
             <thead>

@@ -39,6 +39,23 @@ export async function POST(req: NextRequest) {
     // 클릭 순 정렬, 상위 30개
     keywords.sort((a, b) => b.clicks - a.clicks);
 
+    // 캠페인유형별 합산 (DB 기준 - 차이 계산용)
+    const campaignStats = await prisma.keywordDailyStat.groupBy({
+      by: ['campaignName'],
+      where: {
+        accountId,
+        date: { gte: sinceDate, lte: untilDate },
+      },
+      _sum: { impressions: true, clicks: true, cost: true },
+    });
+
+    const campaignTotals = campaignStats.map((s) => ({
+      campaignName: s.campaignName || '',
+      clicks: s._sum.clicks || 0,
+      impressions: s._sum.impressions || 0,
+      cost: s._sum.cost || 0,
+    }));
+
     // 수집된 날짜 목록 확인
     const syncLogs = await prisma.syncLog.findMany({
       where: { accountId, date: { gte: sinceDate, lte: untilDate } },
@@ -55,6 +72,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       keywords: keywords.slice(0, 30),
       totalKeywords: keywords.length,
+      campaignTotals,
       syncedDays: syncLogs.length,
       lastSync: syncLogs[0]?.date || null,
       debug: { accountId, since: sinceDate.toISOString(), until: untilDate.toISOString() },
