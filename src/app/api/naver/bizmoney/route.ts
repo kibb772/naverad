@@ -18,18 +18,21 @@ export async function POST(req: NextRequest) {
 
     const data = result.data as Record<string, unknown>;
     const bizmoney = (data?.bizmoney ?? data?.balance ?? data?.amount ?? 0) as number;
+    console.log(`[Bizmoney] ${customerId}: 응답 데이터 keys=${Object.keys(data || {}).join(',')}, 전체=${JSON.stringify(data).substring(0, 300)}`);
 
     // 마지막 충전일 조회
     let lastChargeDate: string | null = null;
     try {
       const chargeResult = await naverAds.getBizmoneyCharges();
+      console.log(`[Bizmoney] ${customerId}: 충전이력 success=${chargeResult.success}, error=${chargeResult.error || ''}, data=${JSON.stringify(chargeResult.data || '').substring(0, 200)}`);
       if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
         const charges = chargeResult.data as Record<string, unknown>[];
-        // 가장 최근 충전 날짜
         const latest = charges[0];
         lastChargeDate = (latest.chargeDt || latest.chargeDate || latest.regDt || latest.date || '') as string;
       }
-    } catch { /* 충전 이력 조회 실패해도 잔액은 반환 */ }
+    } catch (e) {
+      console.error(`[Bizmoney] ${customerId}: 충전이력 조회 오류`, e);
+    }
 
     return NextResponse.json({ bizmoney, lastChargeDate });
   } catch (error) {
