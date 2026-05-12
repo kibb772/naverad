@@ -27,14 +27,14 @@ export async function POST(req: NextRequest) {
       console.log(`[Bizmoney] ${customerId}: 충전이력 success=${chargeResult.success}, error=${chargeResult.error || ''}, data=${JSON.stringify(chargeResult.data || '').substring(0, 200)}`);
       if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
         const charges = chargeResult.data as Record<string, unknown>[];
-        const latest = charges[0];
-        // statDt는 타임스탬프(밀리초) 형태
-        const statDt = (latest.statDt || latest.chargeDt || latest.chargeDate || latest.regDt || latest.date || '') as string | number;
-        if (statDt) {
-          const dt = typeof statDt === 'number' || /^\d{10,}$/.test(String(statDt))
-            ? new Date(Number(statDt)).toISOString().slice(0, 10)
-            : String(statDt).slice(0, 10);
-          lastChargeDate = dt;
+        // 가장 최근 충전 찾기 (statDt 기준 최대값)
+        let latestDt = 0;
+        for (const charge of charges) {
+          const dt = Number(charge.statDt || charge.chargeDt || charge.date || 0);
+          if (dt > latestDt) latestDt = dt;
+        }
+        if (latestDt > 0) {
+          lastChargeDate = new Date(latestDt).toISOString().slice(0, 10);
         }
       }
     } catch (e) {
