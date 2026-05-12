@@ -500,7 +500,12 @@ async function checkBizmoneyAndNotify() {
           const chargeResult = await naverAds.getBizmoneyCharges();
           if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
             const charges = chargeResult.data as Record<string, unknown>[];
-            lastChargeDate = ((charges[0].chargeDt || charges[0].chargeDate || charges[0].regDt || charges[0].date || '') as string).slice(0, 10);
+            const statDt = (charges[0].statDt || charges[0].chargeDt || charges[0].date || '') as string | number;
+            if (statDt) {
+              lastChargeDate = typeof statDt === 'number' || /^\d{10,}$/.test(String(statDt))
+                ? new Date(Number(statDt)).toISOString().slice(0, 10)
+                : String(statDt).slice(0, 10);
+            }
           }
         } catch { /* 무시 */ }
 

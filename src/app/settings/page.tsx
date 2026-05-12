@@ -18,6 +18,7 @@ export default function SettingsPage() {
 
   // 비즈머니 잔액
   const [bizmoneyMap, setBizmoneyMap] = useState<Record<string, number | null>>({});
+  const [chargeDateMap, setChargeDateMap] = useState<Record<string, string | null>>({});
 
   // 업로드 중 페이지 이탈 방지
   useEffect(() => {
@@ -47,6 +48,9 @@ export default function SettingsPage() {
         .then((data) => {
           if (data.bizmoney !== undefined) {
             setBizmoneyMap((prev) => ({ ...prev, [account.id]: Math.floor(data.bizmoney) }));
+          }
+          if (data.lastChargeDate) {
+            setChargeDateMap((prev) => ({ ...prev, [account.id]: data.lastChargeDate }));
           }
         })
         .catch(() => {});
@@ -273,6 +277,11 @@ export default function SettingsPage() {
                         ₩{(bizmoneyMap[a.id] || 0).toLocaleString()}
                         {(bizmoneyMap[a.id] || 0) <= 10000 && <span style={{ fontSize: '0.75rem', marginLeft: '0.375rem', color: '#dc2626' }}>⚠️ 충전 필요</span>}
                       </span>
+                      {chargeDateMap[a.id] && (
+                        <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.5rem' }}>
+                          (마지막 충전: {chargeDateMap[a.id]?.replace(/-/g, '.')})
+                        </span>
+                      )}
                     </div>
                   )}
 

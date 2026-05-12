@@ -28,7 +28,14 @@ export async function POST(req: NextRequest) {
       if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
         const charges = chargeResult.data as Record<string, unknown>[];
         const latest = charges[0];
-        lastChargeDate = (latest.chargeDt || latest.chargeDate || latest.regDt || latest.date || '') as string;
+        // statDt는 타임스탬프(밀리초) 형태
+        const statDt = (latest.statDt || latest.chargeDt || latest.chargeDate || latest.regDt || latest.date || '') as string | number;
+        if (statDt) {
+          const dt = typeof statDt === 'number' || /^\d{10,}$/.test(String(statDt))
+            ? new Date(Number(statDt)).toISOString().slice(0, 10)
+            : String(statDt).slice(0, 10);
+          lastChargeDate = dt;
+        }
       }
     } catch (e) {
       console.error(`[Bizmoney] ${customerId}: 충전이력 조회 오류`, e);
