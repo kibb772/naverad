@@ -80,6 +80,7 @@ export default function DashboardPage() {
   const [dataSource, setDataSource] = useState<'live' | 'demo'>('demo');
   const [dateRange, setDateRange] = useState(getDefaultDateRange);
   const [bizmoney, setBizmoney] = useState<number | null>(null);
+  const [lastChargeDate, setLastChargeDate] = useState<string | null>(null);
 
   const selectedAccount = accounts.find((a) => a.id === selectedAccountId);
 
@@ -87,6 +88,7 @@ export default function DashboardPage() {
   useEffect(() => {
     if (!selectedAccount) return;
     setBizmoney(null);
+    setLastChargeDate(null);
 
     fetch('/api/naver/bizmoney', {
       method: 'POST',
@@ -98,7 +100,10 @@ export default function DashboardPage() {
       }),
     })
       .then((r) => r.json())
-      .then((data) => { if (data.bizmoney !== undefined) setBizmoney(data.bizmoney); })
+      .then((data) => {
+        if (data.bizmoney !== undefined) setBizmoney(data.bizmoney);
+        if (data.lastChargeDate) setLastChargeDate(data.lastChargeDate);
+      })
       .catch(() => {});
   }, [selectedAccount?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -273,6 +278,14 @@ export default function DashboardPage() {
           ))}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.375rem', marginLeft: 'auto' }}>
+          <button onClick={() => {
+            const days = getDaysDiff(dateRange.since, dateRange.until);
+            const newUntil = new Date(dateRange.since);
+            newUntil.setDate(newUntil.getDate() - 1);
+            const newSince = new Date(newUntil);
+            newSince.setDate(newSince.getDate() - days + 1);
+            setDateRange({ since: formatDate(newSince), until: formatDate(newUntil) });
+          }} style={{ padding: '0.25rem 0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'white', cursor: 'pointer', fontSize: '0.875rem' }}>◀</button>
           <input type="date" value={dateRange.since}
             max={dateRange.until}
             onChange={(e) => {
@@ -298,6 +311,16 @@ export default function DashboardPage() {
             })()}
             onChange={(e) => setDateRange({ ...dateRange, until: e.target.value })}
             style={{ padding: '0.375rem 0.5rem', borderRadius: '0.375rem', border: '1px solid var(--border)', fontSize: '0.8125rem' }} data-testid="date-until" />
+          <button onClick={() => {
+            const days = getDaysDiff(dateRange.since, dateRange.until);
+            const newSince = new Date(dateRange.until);
+            newSince.setDate(newSince.getDate() + 1);
+            const newUntil = new Date(newSince);
+            newUntil.setDate(newUntil.getDate() + days - 1);
+            const today = new Date();
+            if (newUntil > today) return; // 미래 날짜 방지
+            setDateRange({ since: formatDate(newSince), until: formatDate(newUntil) });
+          }} style={{ padding: '0.25rem 0.5rem', border: '1px solid var(--border)', borderRadius: '0.375rem', background: 'white', cursor: 'pointer', fontSize: '0.875rem' }}>▶</button>
         </div>
         {getDaysDiff(dateRange.since, dateRange.until) > 0 && (
           <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
@@ -341,9 +364,14 @@ export default function DashboardPage() {
       {/* 비즈머니 잔액 표시 */}
       {bizmoney !== null && (
         <div className="card" style={{ marginBottom: '1rem', padding: '0.75rem 1rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: bizmoney <= 10000 ? '#fef2f2' : '#f0fdf4', border: `1px solid ${bizmoney <= 10000 ? '#fecaca' : '#bbf7d0'}` }}>
-          <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>
-            💰 남은 비즈머니
-          </span>
+          <div>
+            <span style={{ fontSize: '0.875rem', fontWeight: 600 }}>💰 남은 비즈머니</span>
+            {lastChargeDate && (
+              <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)', marginLeft: '0.75rem' }}>
+                마지막 충전: {lastChargeDate.slice(0, 10).replace(/-/g, '.')}
+              </span>
+            )}
+          </div>
           <span style={{ fontSize: '1.125rem', fontWeight: 700, color: bizmoney <= 10000 ? '#dc2626' : '#16a34a' }}>
             ₩{Math.floor(bizmoney).toLocaleString()}
             {bizmoney <= 10000 && <span style={{ fontSize: '0.75rem', marginLeft: '0.5rem', color: '#dc2626' }}>⚠️ 충전 필요</span>}

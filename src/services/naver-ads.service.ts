@@ -225,4 +225,14 @@ export class NaverAdsService {
   async getBizmoney() {
     return this.request<{ bizmoney: number; budgetLock: boolean; totalPrepayCost: number }>('GET', '/billing/bizmoney');
   }
+
+  // 비즈머니 충전 이력 조회 (최근 충전일 확인용)
+  async getBizmoneyCharges() {
+    // 최근 30일 충전 이력
+    const since = new Date();
+    since.setDate(since.getDate() - 90);
+    const sinceStr = since.toISOString().slice(0, 10);
+    const untilStr = new Date().toISOString().slice(0, 10);
+    return this.request<unknown[]>('GET', `/billing/bizmoney/histories/charge?searchStartDt=${sinceStr}&searchEndDt=${untilStr}`);
+  }
 }

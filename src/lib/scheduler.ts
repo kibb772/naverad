@@ -480,7 +480,7 @@ async function checkBizmoneyAndNotify() {
     return;
   }
 
-  const results: { accountName: string; customerId: string; bizmoney: number }[] = [];
+  const results: { accountName: string; customerId: string; bizmoney: number; lastChargeDate: string }[] = [];
 
   for (const account of accounts) {
     try {
@@ -493,15 +493,26 @@ async function checkBizmoneyAndNotify() {
       if (result.success && result.data) {
         const data = result.data as Record<string, unknown>;
         const bizmoney = (data?.bizmoney ?? data?.balance ?? data?.amount ?? 0) as number;
-        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney });
-        console.log(`[Scheduler] ${account.accountName}: 비즈머니 ₩${bizmoney.toLocaleString()}`);
+
+        // 마지막 충전일 조회
+        let lastChargeDate = '';
+        try {
+          const chargeResult = await naverAds.getBizmoneyCharges();
+          if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
+            const charges = chargeResult.data as Record<string, unknown>[];
+            lastChargeDate = ((charges[0].chargeDt || charges[0].chargeDate || charges[0].regDt || charges[0].date || '') as string).slice(0, 10);
+          }
+        } catch { /* 무시 */ }
+
+        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney, lastChargeDate });
+        console.log(`[Scheduler] ${account.accountName}: 비즈머니 ₩${bizmoney.toLocaleString()}, 마지막 충전: ${lastChargeDate || '없음'}`);
       } else {
         console.error(`[Scheduler] ${account.accountName}: 비즈머니 조회 실패`, result.error);
-        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
       }
     } catch (error) {
       console.error(`[Scheduler] ${account.accountName}: 비즈머니 조회 오류`, error);
-      results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+      results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
     }
   }
 
@@ -509,7 +520,7 @@ async function checkBizmoneyAndNotify() {
   await sendBizmoneyEmail(results);
 }
 
-async function sendBizmoneyEmail(results: { accountName: string; customerId: string; bizmoney: number }[]) {
+async function sendBizmoneyEmail(results: { accountName: string; customerId: string; bizmoney: number; lastChargeDate: string }[]) {
   const gmailUser = process.env.GMAIL_USER;
   if (!gmailUser) {
     console.log('[Scheduler] Gmail OAuth 설정이 없어 이메일 발송을 건너뜁니다.');
@@ -527,9 +538,9 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
   if (lowBalance.length > 0) {
     html += `<h3 style="color: #dc2626;">⚠️ 잔액 부족 (1만원 이하) - ${lowBalance.length}개 계정</h3>`;
     html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-    html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+    html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
     for (const r of lowBalance) {
-      html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
     }
     html += `</table>`;
   }
@@ -537,9 +548,9 @@ async function sendBizmoneyEmail(results: { accountName: string; customerId: str
   if (normal.length > 0) {
     html += `<h3 style="color: #16a34a;">✅ 정상 - ${normal.length}개 계정</h3>`;
     html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-    html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+    html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
     for (const r of normal) {
-      html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
+      html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
     }
     html += `</table>`;
   }
@@ -593,7 +604,7 @@ export function startScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
 
-  console.log('[Scheduler] 스케줄러 시작됨 (수집: 매일 새벽 2시, 잔액 알림: 매일 오전 9시 KST)');
+  console.log('[Scheduler] 스케줄러 시작됨 (수집: 매일 새벽 4시, 잔액 알림: 매일 오전 9시 KST)');
 
   // CSV 큐 처리 시작 (10초마다 확인)
   setInterval(() => {
@@ -605,7 +616,7 @@ export function startScheduler() {
   const scheduleSync = () => {
     const now = new Date();
     const next = new Date(now);
-    next.setUTCHours(17, 0, 0, 0);
+    next.setUTCHours(19, 0, 0, 0);
     if (next <= now) next.setDate(next.getDate() + 1);
 
     const delay = next.getTime() - now.getTime();
