@@ -26,7 +26,7 @@ export async function GET() {
   try {
     // 모든 활성 계정의 비즈머니 조회
     const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
-    const results: { accountName: string; customerId: string; bizmoney: number }[] = [];
+    const results: { accountName: string; customerId: string; bizmoney: number; lastChargeDate: string }[] = [];
 
     for (const account of accounts) {
       try {
@@ -39,12 +39,28 @@ export async function GET() {
         if (result.success && result.data) {
           const data = result.data as Record<string, unknown>;
           const bizmoney = (data?.bizmoney ?? data?.balance ?? data?.amount ?? 0) as number;
-          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney });
+
+          // 마지막 충전일
+          let lastChargeDate = '';
+          try {
+            const chargeResult = await naverAds.getBizmoneyCharges();
+            if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
+              const charges = chargeResult.data as Record<string, unknown>[];
+              let latestDt = 0;
+              for (const charge of charges) {
+                const dt = Number(charge.statDt || charge.chargeDt || charge.date || 0);
+                if (dt > latestDt) latestDt = dt;
+              }
+              if (latestDt > 0) lastChargeDate = new Date(latestDt).toISOString().slice(0, 10);
+            }
+          } catch { /* 무시 */ }
+
+          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney, lastChargeDate });
         } else {
-          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
         }
       } catch {
-        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1 });
+        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
       }
     }
 
@@ -59,9 +75,9 @@ export async function GET() {
     if (lowBalance.length > 0) {
       html += `<h3 style="color: #dc2626;">⚠️ 잔액 부족 (1만원 이하) - ${lowBalance.length}개 계정</h3>`;
       html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-      html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+      html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
       for (const r of lowBalance) {
-        html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
+        html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
       }
       html += `</table>`;
     }
@@ -69,9 +85,9 @@ export async function GET() {
     if (normal.length > 0) {
       html += `<h3 style="color: #16a34a;">✅ 정상 - ${normal.length}개 계정</h3>`;
       html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-      html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th></tr>`;
+      html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
       for (const r of normal) {
-        html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td></tr>`;
+        html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
       }
       html += `</table>`;
     }
