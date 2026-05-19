@@ -607,6 +607,21 @@ async function runDailySyncIfMissing() {
   }
 }
 
+// 서버 시작 시 오늘 9시가 지났는데 메일을 안 보냈으면 즉시 발송
+let lastAlertDate = '';
+async function runBizmoneyAlertIfMissing() {
+  const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const todayStr = nowKST.toISOString().slice(0, 10);
+  const currentHour = nowKST.getUTCHours(); // KST 시간
+
+  // 오전 9시 이후이고, 오늘 아직 메일을 안 보냈으면
+  if (currentHour >= 0 && lastAlertDate !== todayStr) { // UTC 0시 = KST 9시
+    console.log(`[Scheduler] 서버 시작 시 잔액 알림 누락 감지 (${todayStr}) - 즉시 발송`);
+    lastAlertDate = todayStr;
+    await checkBizmoneyAndNotify();
+  }
+}
+
 export function startScheduler() {
   if (schedulerStarted) return;
   schedulerStarted = true;
@@ -647,6 +662,8 @@ export function startScheduler() {
     console.log(`[Scheduler] 다음 잔액 알림: ${next.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST (${Math.round(delay / 1000 / 60)}분 후)`);
 
     setTimeout(() => {
+      const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+      lastAlertDate = nowKST.toISOString().slice(0, 10);
       checkBizmoneyAndNotify().catch(console.error);
       scheduleBizmoneyAlert();
     }, delay);
@@ -654,6 +671,9 @@ export function startScheduler() {
 
   // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립 대응)
   runDailySyncIfMissing().catch(console.error);
+
+  // 서버 시작 시 오늘 9시가 지났는데 메일을 안 보냈으면 즉시 발송
+  runBizmoneyAlertIfMissing().catch(console.error);
 
   scheduleSync();
   scheduleBizmoneyAlert();
