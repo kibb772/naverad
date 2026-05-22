@@ -71,6 +71,13 @@ export async function POST(req: NextRequest) {
       _sum: { impressions: true, clicks: true, cost: true },
     });
 
+    // 광고그룹별 + 캠페인명 포함 합산 (유형별 성과에서 사용)
+    const adGroupWithCampaignStats = await prisma.keywordDailyStat.groupBy({
+      by: ['adGroupId', 'adGroupName', 'campaignName'],
+      where: { accountId, date: { gte: sinceDate, lte: untilDate } },
+      _sum: { impressions: true, clicks: true, cost: true },
+    });
+
     // 일별 추이 데이터
     const dailyStats = await prisma.keywordDailyStat.groupBy({
       by: ['date'],
@@ -301,8 +308,8 @@ export async function POST(req: NextRequest) {
       doc.fontSize(12).fillColor('#64748b').text('해당 기간에 데이터가 없습니다', 40, 100);
     } else {
       const tTableY = 70;
-      const tColHeaders = ['유형명', '소진', '노출', '클릭', 'CTR', 'CPC'];
-      const tColX = [40, 160, 260, 340, 400, 460];
+      const tColHeaders = ['유형명 / 광고그룹', '소진', '노출', '클릭', 'CTR', 'CPC'];
+      const tColX = [40, 180, 270, 340, 400, 460];
 
       doc.rect(40, tTableY, 515, 20).fill('#e2e8f0');
       tColHeaders.forEach((h, i) => {
@@ -310,11 +317,26 @@ export async function POST(req: NextRequest) {
       });
 
       let tRowY = tTableY + 25;
+
       for (const ts of typeStats) {
+        if (tRowY > 730) {
+          doc.addPage();
+          doc.rect(0, 0, 595, 50).fill(navy);
+          doc.fontSize(14).fillColor(white).text('캠페인 유형별 성과 (계속)', 40, 18);
+          doc.fontSize(9).fillColor('#94a3b8').text('Campaign Type Performance (cont.)', 40, 36);
+          tRowY = 70;
+          doc.rect(40, tRowY, 515, 20).fill('#e2e8f0');
+          tColHeaders.forEach((h, i) => {
+            doc.fontSize(8).fillColor('#475569').text(h, tColX[i], tRowY + 6);
+          });
+          tRowY += 25;
+        }
+
+        // 유형 행 (볼드)
         const ctr = ts.impressions > 0 ? ((ts.clicks / ts.impressions) * 100).toFixed(2) : '0.00';
         const cpc = ts.clicks > 0 ? Math.round(ts.cost / ts.clicks) : 0;
 
-        doc.fontSize(8).fillColor(navy);
+        doc.font('Helvetica-Bold').fontSize(8).fillColor(navy);
         doc.text(ts.type, tColX[0], tRowY);
         doc.text(`₩${ts.cost.toLocaleString()}`, tColX[1], tRowY);
         doc.text(ts.impressions.toLocaleString(), tColX[2], tRowY);
@@ -322,6 +344,50 @@ export async function POST(req: NextRequest) {
         doc.text(`${ctr}%`, tColX[4], tRowY);
         doc.text(`₩${cpc.toLocaleString()}`, tColX[5], tRowY);
         tRowY += 18;
+
+        // 해당 유형 하위 광고그룹
+        const typeAdGroups = adGroupWithCampaignStats
+          .filter((ag) => {
+            const agType = campaignTypeMap.get(ag.campaignName) || '기타';
+            return agType === ts.type;
+          })
+          .map((ag) => ({
+            name: ag.adGroupName,
+            cost: ag._sum.cost || 0,
+            impressions: ag._sum.impressions || 0,
+            clicks: ag._sum.clicks || 0,
+          }))
+          .sort((a, b) => b.cost - a.cost);
+
+        for (const ag of typeAdGroups) {
+          if (tRowY > 730) {
+            doc.addPage();
+            doc.rect(0, 0, 595, 50).fill(navy);
+            doc.fontSize(14).fillColor(white).text('캠페인 유형별 성과 (계속)', 40, 18);
+            doc.fontSize(9).fillColor('#94a3b8').text('Campaign Type Performance (cont.)', 40, 36);
+            tRowY = 70;
+            doc.rect(40, tRowY, 515, 20).fill('#e2e8f0');
+            tColHeaders.forEach((h, i) => {
+              doc.fontSize(8).fillColor('#475569').text(h, tColX[i], tRowY + 6);
+            });
+            tRowY += 25;
+          }
+
+          const agCtr = ag.impressions > 0 ? ((ag.clicks / ag.impressions) * 100).toFixed(2) : '0.00';
+          const agCpc = ag.clicks > 0 ? Math.round(ag.cost / ag.clicks) : 0;
+          const agName = ag.name.length > 25 ? ag.name.slice(0, 23) + '...' : ag.name;
+
+          doc.font('Helvetica').fontSize(7).fillColor('#475569');
+          doc.text(`  └ ${agName}`, tColX[0], tRowY, { width: 135 });
+          doc.text(`₩${ag.cost.toLocaleString()}`, tColX[1], tRowY);
+          doc.text(ag.impressions.toLocaleString(), tColX[2], tRowY);
+          doc.text(ag.clicks.toLocaleString(), tColX[3], tRowY);
+          doc.text(`${agCtr}%`, tColX[4], tRowY);
+          doc.text(`₩${agCpc.toLocaleString()}`, tColX[5], tRowY);
+          tRowY += 16;
+        }
+
+        tRowY += 5; // 유형 간 간격
       }
     }
 
@@ -422,21 +488,6 @@ export async function POST(req: NextRequest) {
         kwRowY += 18;
       });
 
-      // 키워드 소진 비중 바 차트
-      if (kwRowY < 580) {
-        kwRowY += 20;
-        doc.fontSize(10).fillColor('#64748b').text('키워드별 소진 비중', 40, kwRowY);
-        kwRowY += 18;
-        const maxCostKw = keywords[0]?.cost || 1;
-        for (const kw of keywords) {
-          const barWidth = Math.max((kw.cost / maxCostKw) * 300, 2);
-          const ratio = totalCost > 0 ? ((kw.cost / totalCost) * 100).toFixed(1) : '0';
-          doc.fontSize(8).fillColor(navy).text(kw.text, 40, kwRowY + 2, { width: 100 });
-          doc.rect(145, kwRowY, barWidth, 12).fill(blue);
-          doc.fontSize(7).fillColor('#64748b').text(`₩${kw.cost.toLocaleString()} (${ratio}%)`, 145 + barWidth + 5, kwRowY + 2);
-          kwRowY += 18;
-        }
-      }
     }
 
     // 모든 페이지에 푸터 추가 (페이지 번호 + 저작권)
