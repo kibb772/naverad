@@ -355,9 +355,9 @@ export default function DashboardPage() {
 
             reportDiv.innerHTML = `
               <div style="background:#1e2a4a;color:white;padding:30px 40px;margin:-40px -40px 30px -40px;">
-                <h1 style="margin:0;font-size:22px;">키로 광고 보고서</h1>
-                <p style="margin:5px 0 0;color:#94a3b8;font-size:11px;">Kiro Ad Performance Report</p>
-                <p style="margin:15px 0 0;font-size:13px;">${selectedAccount.accountName}</p>
+                <h1 style="margin:0;font-size:22px;">열끈마케팅 광고 보고서</h1>
+                <p style="margin:5px 0 0;color:#94a3b8;font-size:11px;">Ad Performance Report</p>
+                <p style="margin:15px 0 0;font-size:13px;">${selectedAccount.accountName} 주식회사</p>
                 <p style="margin:3px 0 0;color:#94a3b8;font-size:10px;">${dateRange.since.replace(/-/g, '.')} ~ ${dateRange.until.replace(/-/g, '.')}</p>
               </div>
               <h3 style="color:#64748b;font-size:11px;margin-bottom:10px;">핵심 지표 요약</h3>
@@ -368,8 +368,35 @@ export default function DashboardPage() {
                 <div style="flex:1;background:#f8fafc;padding:12px;border-radius:6px;"><span style="font-size:9px;color:#64748b;">CTR</span><br><b style="font-size:16px;color:#1e2a4a;">${totalCtr}%</b></div>
                 <div style="flex:1;background:#f8fafc;padding:12px;border-radius:6px;"><span style="font-size:9px;color:#64748b;">CPC</span><br><b style="font-size:16px;color:#1e2a4a;">₩${totalCpc.toLocaleString()}</b></div>
               </div>
+
+              <h3 style="color:#64748b;font-size:11px;margin-bottom:10px;">캠페인유형별 성과</h3>
+              <table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:25px;">
+                <tr style="background:#e2e8f0;"><th style="padding:6px;text-align:left;">캠페인유형</th><th style="text-align:right;">소진</th><th style="text-align:right;">노출</th><th style="text-align:right;">클릭</th><th style="text-align:right;">CTR</th><th style="text-align:right;">CPC</th><th style="text-align:right;">비중</th></tr>
+                ${(() => {
+                  const campMap: Record<string, { clicks: number; impressions: number; cost: number }> = {};
+                  for (const kw of (kwData.keywords || [])) {
+                    const name = kw.campaignName || '-';
+                    if (!campMap[name]) campMap[name] = { clicks: 0, impressions: 0, cost: 0 };
+                    campMap[name].clicks += kw.clicks;
+                    campMap[name].impressions += kw.impressions;
+                    campMap[name].cost += kw.cost;
+                  }
+                  return Object.entries(campMap).sort((a, b) => b[1].cost - a[1].cost).map(([name, s]) => `
+                    <tr style="border-bottom:1px solid #e2e8f0;">
+                      <td style="padding:5px;font-weight:bold;">${name}</td>
+                      <td style="text-align:right;">₩${s.cost.toLocaleString()}</td>
+                      <td style="text-align:right;">${s.impressions.toLocaleString()}</td>
+                      <td style="text-align:right;">${s.clicks.toLocaleString()}</td>
+                      <td style="text-align:right;">${s.impressions > 0 ? ((s.clicks / s.impressions) * 100).toFixed(2) : 0}%</td>
+                      <td style="text-align:right;">₩${s.clicks > 0 ? Math.round(s.cost / s.clicks).toLocaleString() : 0}</td>
+                      <td style="text-align:right;">${totalCost > 0 ? ((s.cost / totalCost) * 100).toFixed(1) : 0}%</td>
+                    </tr>
+                  `).join('');
+                })()}
+              </table>
+
               <h3 style="color:#64748b;font-size:11px;margin-bottom:10px;">클릭 Top 키워드</h3>
-              <table style="width:100%;border-collapse:collapse;font-size:10px;">
+              <table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:20px;">
                 <tr style="background:#e2e8f0;"><th style="padding:6px;text-align:left;">#</th><th style="text-align:left;">키워드</th><th style="text-align:left;">캠페인</th><th style="text-align:right;">클릭</th><th style="text-align:right;">노출</th><th style="text-align:right;">CTR</th><th style="text-align:right;">CPC</th><th style="text-align:right;">소진</th></tr>
                 ${topKeywords.map((kw: { text: string; campaignName: string; clicks: number; impressions: number; ctr: number; cpc: number; cost: number }, i: number) => `
                   <tr style="border-bottom:1px solid #e2e8f0;${i < 3 ? 'color:#2563eb;' : ''}">
@@ -384,7 +411,19 @@ export default function DashboardPage() {
                   </tr>
                 `).join('')}
               </table>
-              <p style="margin-top:30px;font-size:8px;color:#94a3b8;">ⓒ 열끈마케팅 · 키로 광고 관리 시스템</p>
+
+              <h3 style="color:#64748b;font-size:11px;margin-bottom:10px;">키워드별 소진 비중</h3>
+              ${topKeywords.slice(0, 7).map((kw: { text: string; cost: number }) => {
+                const ratio = totalCost > 0 ? ((kw.cost / totalCost) * 100).toFixed(1) : '0';
+                const barWidth = totalCost > 0 ? Math.max((kw.cost / (topKeywords[0]?.cost || 1)) * 300, 2) : 2;
+                return `<div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+                  <span style="font-size:9px;width:90px;overflow:hidden;white-space:nowrap;">${kw.text}</span>
+                  <div style="width:${barWidth}px;height:14px;background:#2563eb;border-radius:2px;"></div>
+                  <span style="font-size:8px;color:#64748b;">₩${kw.cost.toLocaleString()} (${ratio}%)</span>
+                </div>`;
+              }).join('')}
+
+              <p style="margin-top:30px;font-size:8px;color:#94a3b8;">ⓒ 열끈마케팅</p>
             `;
 
             document.body.appendChild(reportDiv);
