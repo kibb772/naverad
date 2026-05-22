@@ -12,6 +12,7 @@
     "postinstall": "node -e \"if(process.env.SKIP_POSTINSTALL!=='1'){require('child_process').execSync('prisma generate',{stdio:'inherit'})}\""
   },
   "dependencies": {
+    "@fontsource/noto-sans-kr": "^5.2.9",
     "@prisma/client": "^5.22.0",
     "@types/node": "^25.6.0",
     "@types/react": "^19.2.14",
