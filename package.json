@@ -9,7 +9,7 @@
     "lint": "next lint",
     "test": "vitest run",
     "test:watch": "vitest",
-    "postinstall": "node -e \"if(process.env.SKIP_POSTINSTALL!=='1'){require('child_process').execSync('prisma generate',{stdio:'inherit'})}\"" 
+    "postinstall": "node -e \"if(process.env.SKIP_POSTINSTALL!=='1'){require('child_process').execSync('prisma generate',{stdio:'inherit'})}\""
   },
   "dependencies": {
     "@prisma/client": "^5.22.0",
@@ -24,6 +24,7 @@
     "next-auth": "^4.24.14",
     "nodemailer": "^7.0.13",
     "openai": "^6.34.0",
+    "pdfkit": "^0.18.0",
     "prisma": "^5.22.0",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
@@ -37,6 +38,7 @@
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^8.0.0",
+    "@types/pdfkit": "^0.17.6",
     "@vitejs/plugin-react": "^6.0.1",
     "fast-check": "^4.7.0",
     "jsdom": "^29.0.2",

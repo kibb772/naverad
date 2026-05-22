@@ -327,6 +327,29 @@ export default function DashboardPage() {
             ({getDaysDiff(dateRange.since, dateRange.until)}일 / 최대 {MAX_DAYS}일)
           </span>
         )}
+        <button onClick={async () => {
+          if (!selectedAccount) return;
+          try {
+            const res = await fetch('/api/reports/pdf', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ accountId: selectedAccount.id, since: dateRange.since, until: dateRange.until }),
+            });
+            if (res.ok) {
+              const blob = await res.blob();
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${selectedAccount.accountName}_보고서_${dateRange.since}_${dateRange.until}.pdf`;
+              a.click();
+              URL.revokeObjectURL(url);
+            } else {
+              alert('보고서 생성에 실패했습니다.');
+            }
+          } catch { alert('보고서 생성 중 오류가 발생했습니다.'); }
+        }} className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '0.25rem 0.625rem', display: 'flex', alignItems: 'center', gap: '0.25rem' }}>
+          📄 PDF
+        </button>
       </div>
 
       {/* 선택된 계정 정보 배너 */}
