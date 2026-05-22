@@ -114,8 +114,8 @@ export async function POST(req: NextRequest) {
       y+=20;
     });
 
-    // ─── 클릭 TOP 키워드 (고정 위치) ───
-    y=460;
+    // ─── 클릭 TOP 키워드 (캠페인 끝 바로 아래) ───
+    y+=20;
     doc.rect(LM,y,3,13).fill(accent);
     doc.font('B').fontSize(10).fillColor(dark).text('클릭 TOP 키워드',LM+12,y+1);
     y+=24;
@@ -127,27 +127,27 @@ export async function POST(req: NextRequest) {
 
     kws.forEach((kw,i)=>{
       const bg=i%2===0?'#ffffff':rowAlt;
-      doc.rect(LM,y,CW,22).fill(bg);
+      doc.rect(LM,y,CW,20).fill(bg);
 
       // 원형 뱃지
       const badgeC=i<3?accent:dark;
-      const bx=kwX[0]+9, by=y+11;
-      doc.circle(bx,by,9).fill(badgeC);
-      doc.font('B').fontSize(8).fillColor('#ffffff').text(`${i+1}`,bx-5,by-5,{width:10,align:'center'});
+      const bx=kwX[0]+9, by=y+10;
+      doc.circle(bx,by,8).fill(badgeC);
+      doc.font('B').fontSize(7).fillColor('#ffffff').text(`${i+1}`,bx-5,by-4,{width:10,align:'center'});
 
       // 키워드
-      doc.font('R').fontSize(7.5).fillColor(dark).text(kw.text.length>15?kw.text.slice(0,14)+'…':kw.text,kwX[1],y+7,{width:128});
+      doc.font('R').fontSize(7).fillColor(dark).text(kw.text.length>15?kw.text.slice(0,14)+'…':kw.text,kwX[1],y+6,{width:128});
       // 캠페인 뱃지
-      doc.font('R').fontSize(6.5).fillColor(accent).text(kw.camp||'-',kwX[2],y+7,{width:125});
+      doc.font('R').fontSize(6.5).fillColor(accent).text(kw.camp||'-',kwX[2],y+6,{width:125});
       // 수치
-      doc.font('R').fontSize(7.5).fillColor(dark);
-      doc.text(kw.clk.toLocaleString(),kwX[3],y+7);
-      doc.text(kw.imp.toLocaleString(),kwX[4],y+7);
+      doc.font('R').fontSize(7).fillColor(dark);
+      doc.text(kw.clk.toLocaleString(),kwX[3],y+6);
+      doc.text(kw.imp.toLocaleString(),kwX[4],y+6);
       const ctrN=Number(kw.ctr);
-      doc.fillColor(ctrN>=5?accent:dark).text(`${kw.ctr}%`,kwX[5],y+7);
-      doc.fillColor(dark).text(`₩${kw.cpc.toLocaleString()}`,kwX[6],y+7);
-      doc.text(`₩${kw.cost.toLocaleString()}`,kwX[7],y+7);
-      y+=22;
+      doc.fillColor(ctrN>=5?accent:dark).text(`${kw.ctr}%`,kwX[5],y+6);
+      doc.fillColor(dark).text(`₩${kw.cpc.toLocaleString()}`,kwX[6],y+6);
+      doc.text(`₩${kw.cost.toLocaleString()}`,kwX[7],y+6);
+      y+=20;
     });
 
     // ─── FOOTER (A4 하단 고정) ───
