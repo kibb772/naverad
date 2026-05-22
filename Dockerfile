@@ -35,6 +35,19 @@ COPY --from=builder /app/prisma ./prisma
 COPY --from=builder /app/node_modules/.prisma ./node_modules/.prisma
 COPY --from=builder /app/node_modules/@prisma ./node_modules/@prisma
 COPY --from=builder /app/node_modules/pdfkit ./node_modules/pdfkit
+COPY --from=builder /app/node_modules/fontkit ./node_modules/fontkit
+COPY --from=builder /app/node_modules/linebreak ./node_modules/linebreak
+COPY --from=builder /app/node_modules/png-js ./node_modules/png-js
+COPY --from=builder /app/node_modules/js-md5 ./node_modules/js-md5
+COPY --from=builder /app/node_modules/@noble ./node_modules/@noble
+COPY --from=builder /app/node_modules/dfa ./node_modules/dfa
+COPY --from=builder /app/node_modules/unicode-trie ./node_modules/unicode-trie
+COPY --from=builder /app/node_modules/unicode-properties ./node_modules/unicode-properties
+COPY --from=builder /app/node_modules/restructure ./node_modules/restructure
+COPY --from=builder /app/node_modules/brotli ./node_modules/brotli
+COPY --from=builder /app/node_modules/clone ./node_modules/clone
+COPY --from=builder /app/node_modules/deep-equal ./node_modules/deep-equal
+COPY --from=builder /app/node_modules/tiny-inflate ./node_modules/tiny-inflate
 
 USER nextjs
 
