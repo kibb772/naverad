@@ -38,7 +38,7 @@ export async function POST(req: NextRequest) {
     const kws=kwRaw.map(s=>({text:s.keywordText,camp:s.campaignName,clk:s._sum.clicks||0,imp:s._sum.impressions||0,cost:s._sum.cost||0,ctr:(s._sum.impressions||0)>0?+(((s._sum.clicks||0)/(s._sum.impressions||0))*100).toFixed(2):0,cpc:(s._sum.clicks||0)>0?Math.round((s._sum.cost||0)/(s._sum.clicks||0)):0})).sort((a,b)=>b.clk-a.clk||b.cost-a.cost).slice(0,10);
 
     // === PDF 생성 ===
-    const doc = new PDFDocument({size:'A4',margin:0,bufferPages:true});
+    const doc = new PDFDocument({size:'A4',margin:0});
     const buf:Buffer[]=[]; doc.on('data',(c:Buffer)=>buf.push(c));
 
     const fR=path.join(process.cwd(),'public','fonts','NanumGothic.ttf');
@@ -113,8 +113,8 @@ export async function POST(req: NextRequest) {
       y+=20;
     });
 
-    // ─── 클릭 TOP 키워드 ───
-    y+=18;
+    // ─── 클릭 TOP 키워드 (고정 위치) ───
+    y=500;
     doc.rect(LM,y,3,13).fill(accent);
     doc.font('B').fontSize(10).fillColor(dark).text('클릭 TOP 키워드',LM+12,y+1);
     y+=24;
@@ -149,18 +149,12 @@ export async function POST(req: NextRequest) {
       y+=22;
     });
 
-    // ─── FOOTER ───
-    y+=20;
-    const footerH=28;
-    // 페이지 높이를 콘텐츠에 맞게 조정
-    const pageH=y+footerH;
-    // PDFKit에서 현재 페이지 높이 조정 (bufferPages 모드)
-    doc.page.height=pageH;
-
-    doc.rect(0,y,W,footerH).fill(dark);
-    doc.font('R').fontSize(7).fillColor(footerTxt).text('열끈마케팅 광고 관리 보고서',LM,y+9);
+    // ─── FOOTER (A4 하단 고정) ───
+    const footerY=814;
+    doc.rect(0,footerY,W,28).fill(dark);
+    doc.font('R').fontSize(7).fillColor(footerTxt).text('열끈마케팅 광고 관리 보고서',LM,footerY+9);
     const today=new Date().toISOString().slice(0,10).replace(/-/g,'.');
-    doc.font('R').fontSize(7).fillColor(footerTxt).text(`생성일 ${today}`,W-RM-130,y+9,{width:130,align:'right'});
+    doc.font('R').fontSize(7).fillColor(footerTxt).text(`생성일 ${today}`,W-RM-130,footerY+9,{width:130,align:'right'});
 
     doc.end();
     const pdfBuf=await new Promise<Buffer>(res=>{doc.on('end',()=>res(Buffer.concat(buf)));});
