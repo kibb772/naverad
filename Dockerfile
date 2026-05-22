@@ -46,7 +46,6 @@ COPY --from=builder /app/node_modules/unicode-properties ./node_modules/unicode-
 COPY --from=builder /app/node_modules/restructure ./node_modules/restructure
 COPY --from=builder /app/node_modules/brotli ./node_modules/brotli
 COPY --from=builder /app/node_modules/clone ./node_modules/clone
-COPY --from=builder /app/node_modules/deep-equal ./node_modules/deep-equal
 COPY --from=builder /app/node_modules/tiny-inflate ./node_modules/tiny-inflate
 
 USER nextjs
