@@ -345,19 +345,21 @@ export default function DashboardPage() {
             const reportDiv = document.createElement('div');
             reportDiv.style.cssText = 'position:absolute;left:-9999px;top:0;width:794px;padding:40px;background:white;font-family:sans-serif;';
 
-            const totalClicks = (kwData.keywords || []).reduce((s: number, k: { clicks: number }) => s + k.clicks, 0);
-            const totalImpressions = (kwData.keywords || []).reduce((s: number, k: { impressions: number }) => s + k.impressions, 0);
-            const totalCost = (kwData.keywords || []).reduce((s: number, k: { cost: number }) => s + k.cost, 0);
+            const allKeywords = kwData.keywords || [];
+            const totalClicks = allKeywords.reduce((s: number, k: { clicks: number }) => s + k.clicks, 0);
+            const totalImpressions = allKeywords.reduce((s: number, k: { impressions: number }) => s + k.impressions, 0);
+            const totalCost = allKeywords.reduce((s: number, k: { cost: number }) => s + k.cost, 0);
             const totalCtr = totalImpressions > 0 ? ((totalClicks / totalImpressions) * 100).toFixed(2) : '0';
             const totalCpc = totalClicks > 0 ? Math.round(totalCost / totalClicks) : 0;
 
-            const topKeywords = (kwData.keywords || []).slice(0, 15);
+            const topKeywords = allKeywords.slice(0, 15);
+            const campaignTotals = kwData.campaignTotals || [];
 
             reportDiv.innerHTML = `
               <div style="background:#1e2a4a;color:white;padding:30px 40px;margin:-40px -40px 30px -40px;">
                 <h1 style="margin:0;font-size:22px;">열끈마케팅 광고 보고서</h1>
                 <p style="margin:5px 0 0;color:#94a3b8;font-size:11px;">Ad Performance Report</p>
-                <p style="margin:15px 0 0;font-size:13px;">${selectedAccount.accountName} 주식회사</p>
+                <p style="margin:15px 0 0;font-size:13px;">${selectedAccount.accountName}</p>
                 <p style="margin:3px 0 0;color:#94a3b8;font-size:10px;">${dateRange.since.replace(/-/g, '.')} ~ ${dateRange.until.replace(/-/g, '.')}</p>
               </div>
               <h3 style="color:#64748b;font-size:11px;margin-bottom:10px;">핵심 지표 요약</h3>
