@@ -236,10 +236,10 @@ export async function POST(req: NextRequest) {
       kwRY += 13;
     });
 
-    // 푸터
+    // 푸터 (콘텐츠 바로 아래)
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '.');
     doc.font('Korean').fontSize(6).fillColor('#94a3b8');
-    doc.text(`생성일: ${today}  |  ⓒ 열끈마케팅 · 키로 광고 관리 시스템`, 40, 800, { width: 515, align: 'center' });
+    doc.text(`생성일: ${today}  |  ⓒ 열끈마케팅`, 40, kwRY + 10, { width: 515, align: 'center' });
 
     doc.end();
     const pdfBuffer = await new Promise<Buffer>((resolve) => {
