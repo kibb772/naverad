@@ -468,6 +468,26 @@ async function runDailySync() {
   }
 
   console.log('[Scheduler] 일일 데이터 수집 완료');
+
+  // 90일 이전 데이터 자동 삭제
+  try {
+    const cutoffDate = new Date();
+    cutoffDate.setDate(cutoffDate.getDate() - 90);
+    const cutoffStr = cutoffDate.toISOString().slice(0, 10);
+
+    const deletedStats = await prisma.keywordDailyStat.deleteMany({
+      where: { date: { lt: new Date(cutoffStr + 'T00:00:00.000Z') } },
+    });
+    const deletedLogs = await prisma.syncLog.deleteMany({
+      where: { date: { lt: new Date(cutoffStr + 'T00:00:00.000Z') } },
+    });
+
+    if (deletedStats.count > 0 || deletedLogs.count > 0) {
+      console.log(`[Scheduler] 90일 이전 데이터 삭제: KeywordDailyStat ${deletedStats.count}행, SyncLog ${deletedLogs.count}행 (기준일: ${cutoffStr})`);
+    }
+  } catch (error) {
+    console.error('[Scheduler] 데이터 정리 실패:', error);
+  }
 }
 
 // 비즈머니 잔액 체크 + 이메일 발송
