@@ -35,7 +35,7 @@ export async function POST(req: NextRequest) {
 
     const sd2=new Date(since+'T00:00:00.000Z'),ud2=new Date(until+'T23:59:59.999Z');
     const kwRaw=await prisma.keywordDailyStat.groupBy({by:['keywordText','campaignName'],where:{accountId,date:{gte:sd2,lte:ud2}},_sum:{impressions:true,clicks:true,cost:true}});
-    const kws=kwRaw.map(s=>({text:s.keywordText,camp:s.campaignName,clk:s._sum.clicks||0,imp:s._sum.impressions||0,cost:s._sum.cost||0,ctr:(s._sum.impressions||0)>0?+(((s._sum.clicks||0)/(s._sum.impressions||0))*100).toFixed(2):0,cpc:(s._sum.clicks||0)>0?Math.round((s._sum.cost||0)/(s._sum.clicks||0)):0})).sort((a,b)=>b.clk-a.clk||b.cost-a.cost).slice(0,10);
+    const kws=kwRaw.map(s=>({text:s.keywordText,camp:s.campaignName,clk:s._sum.clicks||0,imp:s._sum.impressions||0,cost:s._sum.cost||0,ctr:(s._sum.impressions||0)>0?+(((s._sum.clicks||0)/(s._sum.impressions||0))*100).toFixed(2):0,cpc:(s._sum.clicks||0)>0?Math.round((s._sum.cost||0)/(s._sum.clicks||0)):0})).sort((a,b)=>b.clk-a.clk||b.cost-a.cost).slice(0,15);
 
     // === PDF 생성 ===
     const doc = new PDFDocument({size:'A4',margin:0});
@@ -69,6 +69,7 @@ export async function POST(req: NextRequest) {
     y+=56;
 
     // ─── 캠페인별 성과 ───
+    y+=20;
     doc.rect(LM,y,3,13).fill(accent);
     doc.font('B').fontSize(10).fillColor(dark).text('캠페인별 성과',LM+12,y+1);
     y+=24;
@@ -114,7 +115,7 @@ export async function POST(req: NextRequest) {
     });
 
     // ─── 클릭 TOP 키워드 (고정 위치) ───
-    y=500;
+    y=460;
     doc.rect(LM,y,3,13).fill(accent);
     doc.font('B').fontSize(10).fillColor(dark).text('클릭 TOP 키워드',LM+12,y+1);
     y+=24;
