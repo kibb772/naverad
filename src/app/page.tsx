@@ -1,6 +1,15 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth';
 
-export default function HomePage() {
+export default async function HomePage() {
+  // 이미 로그인한 사용자는 대시보드로 이동
+  const session = await getServerSession(authOptions);
+  if (session?.user) {
+    redirect('/dashboard');
+  }
+
   return (
     <div>
       <header style={{ borderBottom: '1px solid var(--border)', padding: '1rem 0' }}>
