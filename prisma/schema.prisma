@@ -195,7 +195,8 @@ model KeywordDailyStat {
   @@unique([keywordId, date])
   @@index([accountId, date])
   @@index([date])
-  @@index([keywordId])
+  // @@index([keywordId]) 는 제거함 — @@unique([keywordId, date]) 가 이미 keywordId 선행 조회를 커버하며
+  // 36MB를 중복 점유하고 있었다 (스캔 1,288회 vs 복합 인덱스 335만회)
 }
 
 model SyncLog {

@@ -182,21 +182,8 @@ export class NaverAdsService {
   }
 
   async getStatReportDownload(reportJobId: string) {
-    // 먼저 /stat-reports/{id}/download 시도
-    try {
-      const path = `/stat-reports/${reportJobId}/download`;
-      const headers = this.getHeaders('GET', path);
-      const res = await fetch(`${this.baseUrl}${path}`, { method: 'GET', headers });
-
-      if (res.ok) {
-        const text = await res.text();
-        if (text && text.length > 10) {
-          return { success: true, data: text };
-        }
-      }
-    } catch { /* 무시 */ }
-
-    // 폴백: /report-download?authtoken 형태 URL을 상태 조회에서 가져와서 시도
+    // /stat-reports/{id}/download 는 네이버에 존재하지 않는 경로다 (항상 404).
+    // 상태 조회 응답의 downloadUrl(=/report-download?authtoken=...)로만 받을 수 있다.
     try {
       const statusPath = `/stat-reports/${reportJobId}`;
       const statusHeaders = this.getHeaders('GET', statusPath);

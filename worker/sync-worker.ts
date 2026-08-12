@@ -101,6 +101,8 @@ async function syncAccount(account: {
         }));
 
         for (const s of stats) {
+          if (s.impCnt === 0 && s.clkCnt === 0 && s.salesAmt === 0) continue; // 성과 0인 행은 저장하지 않음
+
           await prisma.keywordDailyStat.upsert({
             where: { keywordId_date: { keywordId: s.kwId, date: new Date(syncDate) } },
             update: { impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },

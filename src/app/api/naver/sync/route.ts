@@ -116,10 +116,12 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
 
       if (!campId) continue;
 
+      // AD_DETAIL(v2) 16컬럼 — 통계는 뒤에서 5·4·3번째 (노출/클릭/광고비).
+      // 뒤에서 2번째는 평균노출순위이며, 예전에는 이걸 광고비로 잘못 읽고 있었다.
       const numFields = cols.slice(-5).map((c) => parseInt(c) || 0);
       const impressions = numFields[0] || 0;
       const clicks = numFields[1] || 0;
-      const cost = numFields[3] || 0;
+      const cost = numFields[2] || 0;
 
       const key = kwId || `${campId}-${agId}-unknown`;
       if (!statMap[key]) {
@@ -139,6 +141,8 @@ async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, c
     }[] = [];
 
     for (const [, stat] of Object.entries(statMap)) {
+      if (stat.impressions === 0 && stat.clicks === 0 && stat.cost === 0) continue; // 성과 0인 행은 저장하지 않음
+
       const master = keywordMap[stat.kwId];
       const campaignTypeLabel = master?.campaignType || campTypeMap[stat.campId] || '';
       const keywordText = master?.text || '-';
@@ -228,6 +232,8 @@ async function syncViaKeywords(naverAds: NaverAdsService, accountId: string, cus
         }));
 
         for (const s of stats) {
+          if (s.impCnt === 0 && s.clkCnt === 0 && s.salesAmt === 0) continue; // 성과 0인 행은 저장하지 않음
+
           await prisma.keywordDailyStat.upsert({
             where: { keywordId_date: { keywordId: s.kwId, date: new Date(syncDate) } },
             update: { impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },
@@ -266,7 +272,8 @@ export async function POST(req: NextRequest) {
       where: { accountId_date: { accountId, date: new Date(syncDate) } },
     });
 
-    if (existing && !force) {
+    // FAILED 로그는 "이미 수집됨"으로 보지 않고 재시도한다.
+    if (existing && existing.status !== 'FAILED' && !force) {
       return NextResponse.json({ message: `${syncDate} 데이터는 이미 수집되었습니다.`, skipped: true });
     }
 

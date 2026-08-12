@@ -81,11 +81,11 @@ async function syncAccountData(account: {
     customerId: account.customerId,
   });
 
-  // 이미 수집했는지 확인
+  // 이미 수집했는지 확인 (FAILED는 다음 실행에서 재시도해야 하므로 스킵하지 않는다)
   const existing = await prisma.syncLog.findUnique({
     where: { accountId_date: { accountId: account.id, date: new Date(syncDate) } },
   });
-  if (existing) return { skipped: true, date: syncDate };
+  if (existing && existing.status !== 'FAILED') return { skipped: true, date: syncDate };
 
   // 1. StatReport 생성 요청 (AD_DETAIL = 키워드 단위 통계)
   console.log(`[Scheduler] ${account.customerId}: StatReport 생성 요청 (${syncDate})`);
@@ -199,6 +199,7 @@ async function syncAccountData(account: {
       const impressions = parseInt(row['impCnt'] || row['impressions'] || '0') || 0;
       const clicks = parseInt(row['clkCnt'] || row['clicks'] || '0') || 0;
       const cost = parseInt(row['salesAmt'] || row['cost'] || '0') || 0;
+      if (impressions === 0 && clicks === 0 && cost === 0) continue; // 성과 0인 행은 저장하지 않음
 
       const rawCampType = row['campaignTp'] || row['campaignType'] || '';
       const campaignTypeLabel = rawCampType === 'WEB_SITE' || rawCampType === '1' ? '파워링크'
@@ -276,12 +277,14 @@ async function syncAccountData(account: {
 
       if (!campId) continue;
 
-      // 뒤에서 숫자 필드 추출 (마지막 5~6개가 통계)
+      // AD_DETAIL(v2) 고정 형식 16컬럼:
+      //   일자 고객ID 캠페인ID 광고그룹ID 키워드ID 광고ID 비즈채널ID 매체 지면 지역 PC/M 노출 클릭 광고비 평균노출순위 0
+      // 통계는 뒤에서 5·4·3번째. 예전에는 광고비를 numFields[3](=평균노출순위)에서 읽어
+      // 광고비가 순위 합계로 잘못 저장되고 있었다. /stats API 합계와 대조해 확정함.
       const numFields = cols.slice(-5).map((c) => parseInt(c) || 0);
-      // 패턴: impressions clicks ? cost ?
       const impressions = numFields[0] || 0;
       const clicks = numFields[1] || 0;
-      const cost = numFields[3] || 0;
+      const cost = numFields[2] || 0;
 
       const key = kwId || `${campId}-${agId}-unknown`;
       if (!statMap[key]) {
@@ -293,7 +296,9 @@ async function syncAccountData(account: {
     }
 
     // 매핑 적용하여 rows 생성
-    for (const [key, stat] of Object.entries(statMap)) {
+    for (const [, stat] of Object.entries(statMap)) {
+      if (stat.impressions === 0 && stat.clicks === 0 && stat.cost === 0) continue; // 성과 0인 행은 저장하지 않음
+
       const master = keywordMap[stat.kwId] || keywordMap[`camp-${stat.campId}`];
       const campaignTypeLabel = master?.campaignType || '';
       const keywordText = master?.text || '-';
@@ -357,7 +362,9 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
   const timeRange = { since: syncDate, until: syncDate };
 
   const campResult = await naverAds.getCampaigns();
-  if (!campResult.success || !Array.isArray(campResult.data)) return { error: 'campaigns failed' };
+  if (!campResult.success || !Array.isArray(campResult.data)) {
+    return { error: `campaigns failed: ${campResult.error || 'unknown'}` };
+  }
 
   let totalKeywords = 0;
 
@@ -415,6 +422,10 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
         );
 
         for (const s of stats) {
+          // 성과가 전혀 없는 키워드는 저장하지 않는다.
+          // 계정의 모든 키워드를 매일 한 행씩 쌓으면 DB 용량이 폭증한다 (전체의 85%가 0행이었음)
+          if (s.impCnt === 0 && s.clkCnt === 0 && s.salesAmt === 0) continue;
+
           await prisma.keywordDailyStat.upsert({
             where: { keywordId_date: { keywordId: s.kwId, date: new Date(syncDate) } },
             update: { impressions: s.impCnt, clicks: s.clkCnt, cost: s.salesAmt, cpc: s.clkCnt > 0 ? Math.round(s.salesAmt / s.clkCnt) : 0, ctr: s.impCnt > 0 ? +((s.clkCnt / s.impCnt) * 100).toFixed(2) : 0 },
@@ -435,6 +446,40 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
   return { success: true, date: syncDate, keywordCount: totalKeywords };
 }
 
+// 수집 실패를 SyncLog에 FAILED로 남긴다.
+// 다음 실행에서 재시도할 수 있도록 syncAccountData()는 FAILED 로그를 "이미 수집됨"으로 보지 않는다.
+async function recordSyncFailure(accountId: string, syncDate: string, reason: string) {
+  try {
+    await prisma.syncLog.upsert({
+      where: { accountId_date: { accountId, date: new Date(syncDate) } },
+      update: { status: 'FAILED', keywordCount: 0 },
+      create: { accountId, date: new Date(syncDate), status: 'FAILED', keywordCount: 0 },
+    });
+    console.error(`[Scheduler] SyncLog FAILED 기록: ${accountId} ${syncDate} — ${reason.slice(0, 200)}`);
+  } catch (e) {
+    console.error('[Scheduler] SyncLog FAILED 기록 자체가 실패했습니다:', e);
+  }
+}
+
+async function notifySyncFailure(
+  syncDate: string,
+  failures: { accountName: string; customerId: string; reason: string }[],
+  totalAccounts: number
+) {
+  const esc = (s: string) => s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  let html = `<h2>🚨 키워드 수집 실패 (${syncDate})</h2>`;
+  html += `<p>전체 ${totalAccounts}개 계정 중 <b style="color:#dc2626;">${failures.length}개 실패</b></p>`;
+  html += `<table style="border-collapse: collapse; width: 100%;">`;
+  html += `<tr style="background:#fef2f2;"><th style="padding:8px;border:1px solid #ddd;text-align:left;">계정명</th><th style="padding:8px;border:1px solid #ddd;text-align:left;">CustomerID</th><th style="padding:8px;border:1px solid #ddd;text-align:left;">사유</th></tr>`;
+  for (const f of failures) {
+    html += `<tr><td style="padding:8px;border:1px solid #ddd;">${esc(f.accountName)}</td><td style="padding:8px;border:1px solid #ddd;">${esc(f.customerId)}</td><td style="padding:8px;border:1px solid #ddd;font-family:monospace;font-size:12px;">${esc(f.reason.slice(0, 300))}</td></tr>`;
+  }
+  html += `</table>`;
+  html += `<p style="color:#6b7280;font-size:13px;margin-top:16px;">DB 용량 초과(<code>53100 project size limit</code>)라면 Neon 플랜 또는 보관 기간을 확인하세요.</p>`;
+
+  await sendEmailViaGmailAPI(`🚨 [열끈] 키워드 수집 실패 ${failures.length}개 계정 (${syncDate})`, html);
+}
+
 async function runDailySync() {
   console.log('[Scheduler] 일일 데이터 수집 시작...');
 
@@ -452,6 +497,8 @@ async function runDailySync() {
   yesterdayKST.setDate(yesterdayKST.getDate() - 1);
   const syncDate = yesterdayKST.toISOString().slice(0, 10);
 
+  const failures: { accountName: string; customerId: string; reason: string }[] = [];
+
   for (const account of accounts) {
     try {
       console.log(`[Scheduler] 계정 ${account.customerId} - ${syncDate} 수집 중...`);
@@ -462,12 +509,29 @@ async function runDailySync() {
         customerId: account.customerId,
       }, syncDate);
       console.log(`[Scheduler] 계정 ${account.customerId} 결과:`, result);
+
+      if (result && 'error' in result && result.error) {
+        await recordSyncFailure(account.id, syncDate, String(result.error));
+        failures.push({ accountName: account.accountName, customerId: account.customerId, reason: String(result.error) });
+      }
     } catch (error) {
+      const reason = error instanceof Error ? error.message : String(error);
       console.error(`[Scheduler] 계정 ${account.customerId} 수집 실패:`, error);
+      await recordSyncFailure(account.id, syncDate, reason);
+      failures.push({ accountName: account.accountName, customerId: account.customerId, reason });
     }
   }
 
   console.log('[Scheduler] 일일 데이터 수집 완료');
+
+  // 실패한 계정이 있으면 메일로 알린다.
+  // 예전에는 실패가 로그에만 남고 아무 흔적이 없어서 수집이 한 달간 멈춘 걸 아무도 몰랐다.
+  if (failures.length > 0) {
+    console.error(`[Scheduler] ⚠️ ${failures.length}/${accounts.length}개 계정 수집 실패`);
+    await notifySyncFailure(syncDate, failures, accounts.length).catch((e) =>
+      console.error('[Scheduler] 실패 알림 메일 발송 실패:', e)
+    );
+  }
 
   // 90일 이전 데이터 자동 삭제
   try {
@@ -610,7 +674,7 @@ async function runDailySyncIfMissing() {
       where: { accountId_date: { accountId: account.id, date: new Date(syncDate) } },
     });
 
-    if (!existing) {
+    if (!existing || existing.status === 'FAILED') {
       console.log(`[Scheduler] 서버 시작 시 누락 감지: ${account.customerId} - ${syncDate} 수집 시작`);
       try {
         const result = await syncAccountData({
@@ -620,8 +684,12 @@ async function runDailySyncIfMissing() {
           customerId: account.customerId,
         }, syncDate);
         console.log(`[Scheduler] 누락 수집 완료: ${account.customerId}`, result);
+        if (result && 'error' in result && result.error) {
+          await recordSyncFailure(account.id, syncDate, String(result.error));
+        }
       } catch (error) {
         console.error(`[Scheduler] 누락 수집 실패: ${account.customerId}`, error);
+        await recordSyncFailure(account.id, syncDate, error instanceof Error ? error.message : String(error));
       }
     }
   }
