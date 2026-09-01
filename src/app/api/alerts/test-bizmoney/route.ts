@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import prisma from '@/lib/prisma';
-import { NaverAdsService } from '@/services/naver-ads.service';
+import { collectBizmoneyResults, buildBizmoneyReport } from '@/lib/bizmoney-report';
 
 async function getAccessToken() {
   const res = await fetch('https://oauth2.googleapis.com/token', {
@@ -24,82 +24,10 @@ export async function GET() {
   }
 
   try {
-    // 모든 활성 계정의 비즈머니 조회
+    // 모든 활성 계정의 비즈머니 조회 (스케줄러와 동일한 로직 사용)
     const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
-    const results: { accountName: string; customerId: string; bizmoney: number; lastChargeDate: string }[] = [];
-
-    for (const account of accounts) {
-      try {
-        const naverAds = new NaverAdsService({
-          apiKey: account.apiKey,
-          secretKey: account.secretKey,
-          customerId: account.customerId,
-        });
-        const result = await naverAds.getBizmoney();
-        if (result.success && result.data) {
-          const data = result.data as Record<string, unknown>;
-          const bizmoney = (data?.bizmoney ?? data?.balance ?? data?.amount ?? 0) as number;
-
-          // 마지막 충전일
-          let lastChargeDate = '';
-          try {
-            const chargeResult = await naverAds.getBizmoneyCharges();
-            if (chargeResult.success && Array.isArray(chargeResult.data) && chargeResult.data.length > 0) {
-              const charges = chargeResult.data as Record<string, unknown>[];
-              let latestDt = 0;
-              for (const charge of charges) {
-                const dt = Number(charge.statDt || charge.chargeDt || charge.date || 0);
-                if (dt > latestDt) latestDt = dt;
-              }
-              if (latestDt > 0) lastChargeDate = new Date(latestDt).toISOString().slice(0, 10);
-            }
-          } catch { /* 무시 */ }
-
-          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney, lastChargeDate });
-        } else {
-          results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
-        }
-      } catch {
-        results.push({ accountName: account.accountName, customerId: account.customerId, bizmoney: -1, lastChargeDate: '' });
-      }
-    }
-
-    // 이메일 HTML 생성
-    const lowBalance = results.filter((r) => r.bizmoney >= 0 && r.bizmoney <= 10000);
-    const normal = results.filter((r) => r.bizmoney > 10000);
-    const failed = results.filter((r) => r.bizmoney < 0);
-    const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
-
-    let html = `<h2>📊 비즈머니 잔액 리포트 (${today})</h2>`;
-
-    if (lowBalance.length > 0) {
-      html += `<h3 style="color: #dc2626;">⚠️ 잔액 부족 (1만원 이하) - ${lowBalance.length}개 계정</h3>`;
-      html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-      html += `<tr style="background: #fef2f2;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
-      for (const r of lowBalance) {
-        html += `<tr><td style="padding: 8px; border: 1px solid #ddd; font-weight: bold;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right; color: #dc2626; font-weight: bold;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
-      }
-      html += `</table>`;
-    }
-
-    if (normal.length > 0) {
-      html += `<h3 style="color: #16a34a;">✅ 정상 - ${normal.length}개 계정</h3>`;
-      html += `<table style="border-collapse: collapse; width: 100%; margin-bottom: 20px;">`;
-      html += `<tr style="background: #f0fdf4;"><th style="padding: 8px; border: 1px solid #ddd; text-align: left;">계정명</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">잔액</th><th style="padding: 8px; border: 1px solid #ddd; text-align: right;">마지막 충전</th></tr>`;
-      for (const r of normal) {
-        html += `<tr><td style="padding: 8px; border: 1px solid #ddd;">${r.accountName}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">₩${Math.floor(r.bizmoney).toLocaleString()}</td><td style="padding: 8px; border: 1px solid #ddd; text-align: right;">${r.lastChargeDate ? r.lastChargeDate.replace(/-/g, '.') : '-'}</td></tr>`;
-      }
-      html += `</table>`;
-    }
-
-    if (failed.length > 0) {
-      html += `<h3 style="color: #9ca3af;">❓ 조회 실패 - ${failed.length}개 계정</h3>`;
-      html += `<p style="color: #6b7280;">${failed.map((r) => r.accountName).join(', ')}</p>`;
-    }
-
-    const subject = lowBalance.length > 0
-      ? `⚠️ [열끈] 비즈머니 부족 ${lowBalance.length}개 계정 (${today})`
-      : `✅ [열끈] 비즈머니 잔액 리포트 (${today})`;
+    const results = await collectBizmoneyResults(accounts);
+    const { subject, html } = buildBizmoneyReport(results);
 
     // Gmail API로 발송
     const accessToken = await getAccessToken();
@@ -135,7 +63,12 @@ export async function GET() {
       return NextResponse.json({ error: `Gmail API 오류: ${err}` }, { status: 500 });
     }
 
-    return NextResponse.json({ success: true, message: `비즈머니 리포트 발송 완료 → ${gmailUser}`, accounts: results.length });
+    return NextResponse.json({
+      success: true,
+      message: `비즈머니 리포트 발송 완료 → ${gmailUser}`,
+      accounts: results.length,
+      failed: results.filter((r) => r.bizmoney === null).length,
+    });
   } catch (error) {
     console.error('Bizmoney report error:', error);
     return NextResponse.json({ error: `발송 실패: ${error instanceof Error ? error.message : '알 수 없는 오류'}` }, { status: 500 });
