@@ -355,8 +355,23 @@ export default function DashboardPage() {
         </button>
       </div>
 
+      {/* 탭.
+          로딩 게이트 바깥에 둔다. 안에 뒀더니 캠페인 데이터를 불러오는 동안
+          탭 자체가 사라져서, 캠페인과 무관한 잔액 탭으로 넘어갈 수조차 없었다. */}
+      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
+        {([['overview', '📊 캠페인 현황'], ['bizmoney', '💰 잔액 확인']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key)} data-testid={`tab-${key}`}
+            style={{ padding: '0.5rem 1rem', border: 'none', background: activeTab === key ? 'var(--primary)' : 'transparent', color: activeTab === key ? 'white' : 'var(--text-muted)', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* 잔액 탭은 선택한 계정과도, 캠페인 로딩과도 무관하다 */}
+      {activeTab === 'bizmoney' && <BizmoneyTab />}
+
       {/* 선택된 계정 정보 배너 */}
-      {loading ? (
+      {activeTab === 'overview' && (loading ? (
         <div className="card" style={{ textAlign: 'center', padding: '2rem', marginBottom: '1.5rem' }}>
           <p>네이버 검색광고 데이터를 불러오는 중...</p>
         </div>
@@ -434,27 +449,10 @@ export default function DashboardPage() {
         </div>
       )}
 
-      {/* 탭 */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-        {([['overview', '📊 캠페인 현황'], ['bizmoney', '💰 잔액 확인']] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key as 'overview' | 'bizmoney' | 'diagnosis' | 'report')} data-testid={`tab-${key}`}
-            style={{ padding: '0.5rem 1rem', border: 'none', background: activeTab === key ? 'var(--primary)' : 'transparent', color: activeTab === key ? 'white' : 'var(--text-muted)', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'overview' && (
-        <>
-          <OverviewTab campaigns={d.campaigns} account={selectedAccount} dateRange={dateRange} />
-          <KeywordTopSection account={selectedAccount} dateRange={dateRange} campaigns={d.campaigns} />
-        </>
-      )}
-
-      {/* 잔액 탭은 선택한 계정과 무관하게 전체 계정을 보여준다 */}
-      {activeTab === 'bizmoney' && <BizmoneyTab />}
+      <OverviewTab campaigns={d.campaigns} account={selectedAccount} dateRange={dateRange} />
+      <KeywordTopSection account={selectedAccount} dateRange={dateRange} campaigns={d.campaigns} />
       </>
-      )}
+      ))}
     </DashboardLayout>
   );
 }
