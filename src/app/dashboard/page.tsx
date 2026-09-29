@@ -6,7 +6,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAccounts, LinkedAccount } from '@/context/AccountContext';
 import { reconcileKeywordsWithLive } from '@/lib/keyword-reconcile';
-import BizmoneyTab from './BizmoneyTab';
+import { SideNav, LogoutButton } from '@/components/SideNav';
 
 function getDemoDataForAccount(account: LinkedAccount) {
   // 계정별로 다른 데모 데이터 생성 (customerId 기반 시드)
@@ -80,7 +80,6 @@ function getDaysDiff(since: string, until: string): number {
 
 export default function DashboardPage() {
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccounts();
-  const [activeTab, setActiveTab] = useState<'overview' | 'bizmoney' | 'diagnosis' | 'report'>('overview');
   const [loading, setLoading] = useState(false);
   const [campaignData, setCampaignData] = useState<ReturnType<typeof getDemoDataForAccount> | null>(null);
   const [dataSource, setDataSource] = useState<'live' | 'demo'>('demo');
@@ -355,23 +354,11 @@ export default function DashboardPage() {
         </button>
       </div>
 
-      {/* 탭.
-          로딩 게이트 바깥에 둔다. 안에 뒀더니 캠페인 데이터를 불러오는 동안
-          탭 자체가 사라져서, 캠페인과 무관한 잔액 탭으로 넘어갈 수조차 없었다. */}
-      <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-        {([['overview', '📊 캠페인 현황'], ['bizmoney', '💰 잔액 확인']] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key)} data-testid={`tab-${key}`}
-            style={{ padding: '0.5rem 1rem', border: 'none', background: activeTab === key ? 'var(--primary)' : 'transparent', color: activeTab === key ? 'white' : 'var(--text-muted)', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {/* 잔액 탭은 선택한 계정과도, 캠페인 로딩과도 무관하다 */}
-      {activeTab === 'bizmoney' && <BizmoneyTab />}
+      {/* 잔액 확인은 왼쪽 메뉴의 /bizmoney 페이지로 옮겼다 (전체 계정을 보는 화면이라
+          계정을 하나 고르는 대시보드 안에 두면 성격이 맞지 않았다). */}
 
       {/* 선택된 계정 정보 배너 */}
-      {activeTab === 'overview' && (loading ? (
+      {(loading ? (
         <div className="card" style={{ textAlign: 'center', padding: '2rem', marginBottom: '1.5rem' }}>
           <p>네이버 검색광고 데이터를 불러오는 중...</p>
         </div>
@@ -935,21 +922,8 @@ function DashboardLayout({ children, accounts, selectedAccountId, onSelectAccoun
       <aside style={{ width: '240px', background: 'white', borderRight: '1px solid var(--border)', padding: '1.5rem 1rem', flexShrink: 0, display: 'flex', flexDirection: 'column' }}>
         <h1 style={{ fontSize: '1.125rem', fontWeight: 700, marginBottom: '1.5rem' }}>🔥 열끈</h1>
 
-        <nav style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem', flex: 1 }}>
-          {[
-            { href: '/dashboard', label: '📊 대시보드', active: true },
-            { href: '/settings', label: '🔗 계정 연동', active: false },
-          ].map((item) => (
-            <Link key={item.href} href={item.href} data-testid={`nav-${item.href.slice(1)}`}
-              style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: item.active ? 600 : 400, background: item.active ? 'var(--bg)' : 'transparent', color: item.active ? 'var(--primary)' : 'var(--text)' }}>
-              {item.label}
-            </Link>
-          ))}
-        </nav>
-        <button onClick={() => { import('next-auth/react').then(m => m.signOut({ callbackUrl: '/login' })); }}
-          style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', textAlign: 'left' }}>
-          🚪 로그아웃
-        </button>
+        <SideNav current="/dashboard" />
+        <LogoutButton />
       </aside>
       <main style={{ flex: 1, padding: '2rem', background: 'var(--bg)' }}>{children}</main>
     </div>

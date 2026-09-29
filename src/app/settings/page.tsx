@@ -196,6 +196,7 @@ export default function SettingsPage() {
           <Link href="/dashboard" onClick={(e) => { if (uploadingAccountId) { if (!confirm('CSV 업로드가 진행 중입니다. 페이지를 떠나시겠습니까?')) e.preventDefault(); } }}
             style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>📊 대시보드</Link>
           <Link href="/settings" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 600, background: 'var(--bg)', color: 'var(--primary)' }}>🔗 계정 연동</Link>
+          <Link href="/bizmoney" style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', fontWeight: 400, color: 'var(--text)' }}>💰 잔액 확인</Link>
         </nav>
         <button onClick={() => { import('next-auth/react').then(m => m.signOut({ callbackUrl: '/login' })); }}
           style={{ padding: '0.625rem 0.875rem', borderRadius: '0.5rem', fontSize: '0.875rem', border: 'none', background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', textAlign: 'left' }}>
