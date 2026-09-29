@@ -738,7 +738,9 @@ export function startScheduler() {
 
     setTimeout(() => {
       runDailySync()
-        .then(() => backfillMissingDates({ lookbackDays: 30, maxSyncs: 20 }))
+        // 보관 기간(90일) 전체를 훑는다. 평소에는 채울 게 없어 비용이 들지 않고,
+        // 수집이 며칠 멈췄다 복구된 경우에는 하룻밤에 따라잡는다.
+        .then(() => backfillMissingDates({ lookbackDays: 90, maxSyncs: 250 }))
         .catch(console.error);
       scheduleSync();
     }, delay);
@@ -764,7 +766,11 @@ export function startScheduler() {
   };
 
   // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립 대응)
-  runDailySyncIfMissing().catch(console.error);
+  // 이어서 과거 누락일도 채운다. 평소에는 채울 게 없어 바로 끝나고,
+  // 수집이 멈췄다 복구된 뒤에는 다음 새벽까지 기다리지 않고 바로 따라잡는다.
+  runDailySyncIfMissing()
+    .then(() => backfillMissingDates({ lookbackDays: 90, maxSyncs: 250 }))
+    .catch(console.error);
 
   // 서버 시작 시 오늘 9시가 지났는데 메일을 안 보냈으면 즉시 발송
   runBizmoneyAlertIfMissing().catch(console.error);
