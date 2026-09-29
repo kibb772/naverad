@@ -71,6 +71,66 @@ async function sendEmailViaGmailAPI(subject: string, html: string) {
   return true;
 }
 
+// 키워드 마스터(ID → 키워드명/캠페인유형) 캐시.
+//
+// 이 매핑은 네이버 계정의 '현재' 구성을 읽는 것이라 수집하려는 날짜와 무관하게 같은 값이다.
+// 그런데 (계정 × 날짜) 마다 매번 새로 만들고 있었다. 광고그룹마다 키워드를 따로 조회하기
+// 때문에 계정 하나에 수십 번의 API 호출이 들고, 정작 통계 다운로드보다 이쪽이 더 오래 걸린다.
+// 누락일 백필처럼 한 계정의 여러 날짜를 연달아 수집할 때 같은 목록을 16번씩 다시 받게 된다.
+// 짧은 TTL 을 둬서 연속 수집 중에만 재사용하고, 다음 날 수집에는 새로 받는다.
+const KEYWORD_MASTER_TTL_MS = 30 * 60 * 1000;
+const keywordMasterCache = new Map<string, { at: number; map: Record<string, { text: string; campaignType: string }> }>();
+
+async function getKeywordMaster(
+  naverAds: NaverAdsService,
+  account: { id: string; customerId: string }
+): Promise<Record<string, { text: string; campaignType: string }>> {
+  const cached = keywordMasterCache.get(account.id);
+  if (cached && Date.now() - cached.at < KEYWORD_MASTER_TTL_MS) {
+    console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 캐시 사용 (${Object.keys(cached.map).length}개)`);
+    return cached.map;
+  }
+
+  console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 매핑 구축 중...`);
+  const keywordMap: Record<string, { text: string; campaignType: string }> = {};
+
+  try {
+    const campResult = await naverAds.getCampaigns();
+    if (campResult.success && Array.isArray(campResult.data)) {
+      for (const camp of campResult.data as Record<string, unknown>[]) {
+        const campId = (camp.nccCampaignId || camp.campaignId) as string;
+        const campType = (camp.campaignTp || camp.campaignType || '') as string;
+        const typeLabel = getCampaignTypeLabel(campType);
+
+        const agResult = await naverAds.getAdGroups(campId);
+        if (!agResult.success || !Array.isArray(agResult.data)) continue;
+
+        for (const ag of agResult.data as Record<string, unknown>[]) {
+          const agId = (ag.nccAdgroupId || ag.adgroupId) as string;
+          const kwResult = await naverAds.getKeywords(agId);
+          if (!kwResult.success || !Array.isArray(kwResult.data)) continue;
+
+          for (const kw of kwResult.data as Record<string, unknown>[]) {
+            const kwId = (kw.nccKeywordId || kw.keywordId) as string;
+            const kwText = (kw.keyword || kw.text || kw.name) as string;
+            keywordMap[kwId] = { text: kwText, campaignType: typeLabel };
+          }
+        }
+
+        // 캠페인 ID → 유형 매핑도 저장
+        keywordMap[`camp-${campId}`] = { text: '', campaignType: typeLabel };
+      }
+    }
+  } catch (e) {
+    console.error(`[Scheduler] ${account.customerId}: 키워드 마스터 구축 실패`, e);
+    return keywordMap; // 실패한 결과는 캐시하지 않는다
+  }
+
+  console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 ${Object.keys(keywordMap).length}개 매핑 완료`);
+  keywordMasterCache.set(account.id, { at: Date.now(), map: keywordMap });
+  return keywordMap;
+}
+
 export async function syncAccountData(account: {
   id: string;
   apiKey: string;
@@ -218,42 +278,8 @@ export async function syncAccountData(account: {
     }
   } else {
     // 헤더 없는 고정 형식 (AD_DETAIL)
-    // 먼저 키워드 마스터 매핑 구축 (ID → 텍스트)
-    console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 매핑 구축 중...`);
-    const keywordMap: Record<string, { text: string; campaignType: string }> = {};
-
-    try {
-      const campResult = await naverAds.getCampaigns();
-      if (campResult.success && Array.isArray(campResult.data)) {
-        for (const camp of campResult.data as Record<string, unknown>[]) {
-          const campId = (camp.nccCampaignId || camp.campaignId) as string;
-          const campType = (camp.campaignTp || camp.campaignType || '') as string;
-          const typeLabel = getCampaignTypeLabel(campType);
-
-          const agResult = await naverAds.getAdGroups(campId);
-          if (!agResult.success || !Array.isArray(agResult.data)) continue;
-
-          for (const ag of agResult.data as Record<string, unknown>[]) {
-            const agId = (ag.nccAdgroupId || ag.adgroupId) as string;
-            const kwResult = await naverAds.getKeywords(agId);
-            if (!kwResult.success || !Array.isArray(kwResult.data)) continue;
-
-            for (const kw of kwResult.data as Record<string, unknown>[]) {
-              const kwId = (kw.nccKeywordId || kw.keywordId) as string;
-              const kwText = (kw.keyword || kw.text || kw.name) as string;
-              keywordMap[kwId] = { text: kwText, campaignType: typeLabel };
-            }
-          }
-
-          // 캠페인 ID → 유형 매핑도 저장
-          keywordMap[`camp-${campId}`] = { text: '', campaignType: typeLabel };
-        }
-      }
-    } catch (e) {
-      console.error(`[Scheduler] ${account.customerId}: 키워드 마스터 구축 실패`, e);
-    }
-
-    console.log(`[Scheduler] ${account.customerId}: 키워드 마스터 ${Object.keys(keywordMap).length}개 매핑 완료`);
+    // 키워드 마스터 매핑 (ID → 텍스트)
+    const keywordMap = await getKeywordMaster(naverAds, account);
 
     // StatReport 고정 형식 파싱
     // 같은 keywordId의 통계를 합산 (디바이스별로 분리되어 있을 수 있음)
