@@ -5,6 +5,7 @@ export const dynamic = 'force-dynamic';
 import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAccounts, LinkedAccount } from '@/context/AccountContext';
+import { reconcileKeywordsWithLive } from '@/lib/keyword-reconcile';
 
 function getDemoDataForAccount(account: LinkedAccount) {
   // 계정별로 다른 데모 데이터 생성 (customerId 기반 시드)
@@ -57,6 +58,10 @@ function getDemoDataForAccount(account: LinkedAccount) {
 }
 
 const MAX_DAYS = 90; // 네이버 검색광고 Stats API 최대 조회 기간
+
+// KeywordDailyStat 은 scheduler 의 정리 작업이 90일만 남긴다.
+// 그보다 이전 기간은 상단 KPI 는 나와도 키워드 표가 비므로 화면에서 따로 안내한다.
+const KEYWORD_RETENTION_DAYS = 90;
 
 const formatDate = (d: Date) => d.toISOString().slice(0, 10);
 
@@ -451,14 +456,13 @@ export default function DashboardPage() {
 }
 
 /* ── 키워드 Top 30 섹션 ── */
-function KeywordTopSection({ account, dateRange, campaigns }: { account?: LinkedAccount | null; dateRange?: { since: string; until: string }; campaigns?: { campaignType?: string; clicks: number }[] }) {
+function KeywordTopSection({ account, dateRange, campaigns }: { account?: LinkedAccount | null; dateRange?: { since: string; until: string }; campaigns?: { campaignType?: string; clicks: number; impressions?: number; cost?: number }[] }) {
   const [keywords, setKeywords] = useState<{ id: string; text: string; campaignName?: string; adGroupName?: string; cost: number; impressions: number; clicks: number; ctr: number; cpc: number }[]>([]);
   const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [loaded, setLoaded] = useState(false);
   const [showAll, setShowAll] = useState(false);
-  const [syncInfo, setSyncInfo] = useState<{ syncedDays: number; lastSync: string | null }>({ syncedDays: 0, lastSync: null });
-  const [campaignTotals, setCampaignTotals] = useState<{ campaignName: string; clicks: number; impressions: number; cost: number }[]>([]);
+  const [syncInfo, setSyncInfo] = useState<{ syncedDays: number; daysWithData: number; totalKeywords: number; truncated: boolean; lastSync: string | null }>({ syncedDays: 0, daysWithData: 0, totalKeywords: 0, truncated: false, lastSync: null });
 
   // DB에서 캐시된 데이터 즉시 조회
   useEffect(() => {
@@ -473,8 +477,13 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
       .then((r) => r.json())
       .then((data) => {
         setKeywords(data.keywords || []);
-        setCampaignTotals(data.campaignTotals || []);
-        setSyncInfo({ syncedDays: data.syncedDays || 0, lastSync: data.lastSync });
+        setSyncInfo({
+          syncedDays: data.syncedDays || 0,
+          daysWithData: data.daysWithData || 0,
+          totalKeywords: data.totalKeywords || 0,
+          truncated: !!data.truncated,
+          lastSync: data.lastSync,
+        });
         setLoaded(true);
       })
       .catch(() => { setLoaded(true); })
@@ -530,7 +539,13 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
         if (kwRes.ok) {
           const kwData = await kwRes.json();
           setKeywords(kwData.keywords || []);
-          setSyncInfo({ syncedDays: kwData.syncedDays || 0, lastSync: kwData.lastSync });
+          setSyncInfo({
+            syncedDays: kwData.syncedDays || 0,
+            daysWithData: kwData.daysWithData || 0,
+            totalKeywords: kwData.totalKeywords || 0,
+            truncated: !!kwData.truncated,
+            lastSync: kwData.lastSync,
+          });
         }
       }
     } catch {
@@ -540,44 +555,20 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
     setSyncing(false);
   };
 
-  // DB 캠페인별 합산과 키워드별 합산의 차이를 '-'로 표시
-  let allKeywordsWithMissing = [...keywords];
-  if (campaignTotals.length > 0 && keywords.length > 0) {
-    // 키워드에서 '-'가 아닌 것만 캠페인별 합산
-    const kwClicksByType: Record<string, { clicks: number; impressions: number; cost: number }> = {};
-    for (const kw of keywords) {
-      if (kw.text === '-') continue; // 이미 DB에 있는 '-'는 제외
-      const type = kw.campaignName || '';
-      if (!kwClicksByType[type]) kwClicksByType[type] = { clicks: 0, impressions: 0, cost: 0 };
-      kwClicksByType[type].clicks += kw.clicks;
-      kwClicksByType[type].impressions += kw.impressions;
-      kwClicksByType[type].cost += kw.cost;
-    }
-    // DB에 '-' 키워드가 이미 있는지 확인
-    const existingDash = keywords.filter((kw) => kw.text === '-');
-    const existingDashTypes = new Set(existingDash.map((kw) => kw.campaignName));
+  // 키워드 합계를 상단 KPI(네이버 실시간)와 맞춘다. 근거와 이력은 keyword-reconcile.ts 참고.
+  const allKeywordsWithMissing = reconcileKeywordsWithLive(keywords, campaigns);
 
-    // DB에 '-'가 없는 캠페인 유형에 대해서만 차이 계산
-    for (const ct of campaignTotals) {
-      if (existingDashTypes.has(ct.campaignName)) continue; // 이미 DB에 '-'가 있으면 스킵
-      const kwStats = kwClicksByType[ct.campaignName] || { clicks: 0, impressions: 0, cost: 0 };
-      const diffClicks = ct.clicks - kwStats.clicks;
-      const diffImpressions = ct.impressions - kwStats.impressions;
-      const diffCost = ct.cost - kwStats.cost;
-      if (diffClicks > 0) {
-        allKeywordsWithMissing.push({
-          id: `missing-${ct.campaignName}`, text: '-', campaignName: ct.campaignName, adGroupName: '',
-          clicks: diffClicks, impressions: diffImpressions > 0 ? diffImpressions : 0,
-          cost: diffCost > 0 ? diffCost : 0,
-          ctr: diffImpressions > 0 ? +((diffClicks / diffImpressions) * 100).toFixed(2) : 0,
-          cpc: diffClicks > 0 ? Math.round((diffCost > 0 ? diffCost : 0) / diffClicks) : 0,
-        });
-      }
-    }
-    // 클릭수 기준 재정렬
-    allKeywordsWithMissing.sort((a, b) => b.clicks - a.clicks);
-  }
   const finalDisplayed = showAll ? allKeywordsWithMissing : allKeywordsWithMissing.slice(0, 10);
+
+  // 키워드 데이터는 90일만 보관한다. 그보다 이전을 조회하면 상단 KPI 는 네이버에서
+  // 값이 나오는데 키워드 표는 비어서, 보정 행 하나만 남는다. 그 상황을 화면에 알린다.
+  const retentionCutoff = new Date();
+  retentionCutoff.setDate(retentionCutoff.getDate() - KEYWORD_RETENTION_DAYS);
+  const beyondRetention = !!dateRange?.since && new Date(dateRange.since) < retentionCutoff;
+
+  // 조회 기간 중 데이터가 없는 날이 있으면 알린다 (수집 누락 / 미수집 당일)
+  const requestedDays = dateRange?.since && dateRange?.until ? getDaysDiff(dateRange.since, dateRange.until) : 0;
+  const missingDays = requestedDays > 0 ? Math.max(0, requestedDays - syncInfo.daysWithData) : 0;
 
   return (
     <div style={{ marginTop: '2rem' }}>
@@ -586,7 +577,7 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
           <h3 style={{ fontSize: '1.125rem', fontWeight: 600 }}>🔑 클릭 Top 키워드</h3>
           {syncInfo.syncedDays > 0 && (
             <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              수집된 날짜: {syncInfo.syncedDays}일 · 마지막 수집: {syncInfo.lastSync ? new Date(syncInfo.lastSync).toLocaleDateString('ko-KR') : '-'}
+              수집된 날짜: {syncInfo.daysWithData || syncInfo.syncedDays}/{requestedDays}일 · 키워드 {syncInfo.totalKeywords.toLocaleString()}종 · 마지막 수집: {syncInfo.lastSync ? new Date(syncInfo.lastSync).toLocaleDateString('ko-KR') : '-'}
             </span>
           )}
         </div>
@@ -594,6 +585,19 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
           {syncing ? '수집 중...' : '🔄 수동 수집'}
         </button>
       </div>
+
+      {beyondRetention && (
+        <div style={{ padding: '0.625rem 0.875rem', marginBottom: '0.75rem', borderRadius: '0.5rem', background: '#fef3c7', color: '#92400e', fontSize: '0.8125rem' }}>
+          ⚠️ 키워드 통계는 최근 {KEYWORD_RETENTION_DAYS}일만 보관합니다. 이 기간의 키워드 내역은 일부 또는 전부 남아 있지 않아,
+          상단 KPI 와 달리 아래 표에는 &apos;-&apos; 행으로만 표시될 수 있습니다.
+        </div>
+      )}
+
+      {!beyondRetention && missingDays > 0 && loaded && (
+        <div style={{ padding: '0.625rem 0.875rem', marginBottom: '0.75rem', borderRadius: '0.5rem', background: '#f1f5f9', color: '#475569', fontSize: '0.8125rem' }}>
+          이 기간 중 {missingDays}일은 키워드 내역이 없습니다. 해당 일자의 클릭은 키워드별로 나누지 못하고 &apos;-&apos; 행에 합산됩니다.
+        </div>
+      )}
 
       {loading && <div className="card" style={{ textAlign: 'center', padding: '2rem', color: 'var(--text-muted)' }}>키워드 통계를 불러오는 중... (키워드가 많으면 시간이 걸릴 수 있습니다)</div>}
 
@@ -620,7 +624,14 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
               {finalDisplayed.map((kw, i) => (
                 <tr key={kw.id} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '0.625rem 0.5rem', color: i < 3 ? 'var(--primary)' : 'var(--text-muted)', fontWeight: i < 3 ? 700 : 400 }}>{i + 1}</td>
-                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700 }}>{kw.text}</td>
+                  <td style={{ padding: '0.625rem 0.5rem', fontWeight: 700 }}>
+                    {kw.text}
+                    {kw.id.startsWith('missing-') && (
+                      <span style={{ marginLeft: '0.375rem', fontWeight: 500, fontSize: '0.6875rem', color: 'var(--text-muted)' }}>
+                        키워드 미집계
+                      </span>
+                    )}
+                  </td>
                   <td style={{ padding: '0.625rem 0.5rem' }}>
                     {kw.campaignName ? (
                       <span style={{
@@ -643,8 +654,13 @@ function KeywordTopSection({ account, dateRange, campaigns }: { account?: Linked
           {allKeywordsWithMissing.length > 10 && (
             <div style={{ textAlign: 'center', marginTop: '0.75rem' }}>
               <button onClick={() => setShowAll(!showAll)} className="btn btn-outline" style={{ fontSize: '0.8125rem' }} data-testid="toggle-keywords-btn">
-                {showAll ? `접기 (10개만 보기)` : `더보기 (${allKeywordsWithMissing.length}개 전체)`}
+                {showAll ? `접기 (10개만 보기)` : `더보기 (${allKeywordsWithMissing.length.toLocaleString()}개)`}
               </button>
+              {syncInfo.truncated && (
+                <div style={{ marginTop: '0.375rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                  이 기간 키워드는 총 {syncInfo.totalKeywords.toLocaleString()}종이며, 클릭 상위 {allKeywordsWithMissing.length.toLocaleString()}종만 표시합니다.
+                </div>
+              )}
             </div>
           )}
         </div>

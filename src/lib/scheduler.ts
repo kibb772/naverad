@@ -1,6 +1,7 @@
 import prisma from './prisma';
 import { NaverAdsService } from '@/services/naver-ads.service';
 import { processCSVQueue } from './csv-queue';
+import { getCampaignTypeLabel } from './campaign-type';
 import { collectBizmoneyResults, buildBizmoneyReport } from './bizmoney-report';
 
 let schedulerStarted = false;
@@ -70,7 +71,7 @@ async function sendEmailViaGmailAPI(subject: string, html: string) {
   return true;
 }
 
-async function syncAccountData(account: {
+export async function syncAccountData(account: {
   id: string;
   apiKey: string;
   secretKey: string;
@@ -203,12 +204,7 @@ async function syncAccountData(account: {
       if (impressions === 0 && clicks === 0 && cost === 0) continue; // 성과 0인 행은 저장하지 않음
 
       const rawCampType = row['campaignTp'] || row['campaignType'] || '';
-      const campaignTypeLabel = rawCampType === 'WEB_SITE' || rawCampType === '1' ? '파워링크'
-        : rawCampType === 'SHOPPING' || rawCampType === '2' ? '쇼핑검색'
-        : rawCampType === 'POWER_CONTENTS' || rawCampType === '3' ? '파워컨텐츠'
-        : rawCampType === 'BRAND_SEARCH' || rawCampType === '4' ? '브랜드검색'
-        : rawCampType === 'PLACE' || rawCampType === '6' ? '플레이스'
-        : rawCampType || '';
+      const campaignTypeLabel = getCampaignTypeLabel(rawCampType);
 
       rows.push({
         accountId: account.id, campaignId: row['nccCampaignId'] || '',
@@ -232,11 +228,7 @@ async function syncAccountData(account: {
         for (const camp of campResult.data as Record<string, unknown>[]) {
           const campId = (camp.nccCampaignId || camp.campaignId) as string;
           const campType = (camp.campaignTp || camp.campaignType || '') as string;
-          const typeLabel = campType === 'WEB_SITE' ? '파워링크'
-            : campType === 'SHOPPING' ? '쇼핑검색'
-            : campType === 'POWER_CONTENTS' ? '파워컨텐츠'
-            : campType === 'BRAND_SEARCH' ? '브랜드검색'
-            : campType === 'PLACE' ? '플레이스' : campType || '';
+          const typeLabel = getCampaignTypeLabel(campType);
 
           const agResult = await naverAds.getAdGroups(campId);
           if (!agResult.success || !Array.isArray(agResult.data)) continue;
@@ -373,12 +365,7 @@ async function syncAccountDataLegacy(naverAds: NaverAdsService, account: { id: s
     const campId = (camp.nccCampaignId || camp.campaignId) as string;
     const campName = camp.name as string;
     const campType = (camp.campaignTp || camp.campaignType || '') as string;
-    const campaignTypeLabel = campType === 'WEB_SITE' ? '파워링크'
-      : campType === 'SHOPPING' ? '쇼핑검색'
-      : campType === 'POWER_CONTENTS' ? '파워컨텐츠'
-      : campType === 'BRAND_SEARCH' ? '브랜드검색'
-      : campType === 'PLACE' ? '플레이스'
-      : campType || campName;
+    const campaignTypeLabel = getCampaignTypeLabel(campType) || campName;
 
     const agResult = await naverAds.getAdGroups(campId);
     if (!agResult.success || !Array.isArray(agResult.data)) continue;
@@ -571,6 +558,84 @@ async function checkBizmoneyAndNotify() {
 }
 
 
+// 과거 누락일 백필.
+// runDailySyncIfMissing() 은 '어제' 하루만 확인해서, 이틀 이상 지난 구멍은 영영 안 메워졌다.
+// 그 탓에 대시보드에서 과거 기간을 보면 키워드 합계가 네이버 실시간 값보다 적게 나왔다.
+// 네이버 StatReport 는 100일 이전 날짜도 내주므로 뒤늦게라도 채울 수 있다.
+// 한 번에 몰아 돌면 API 부담이 크므로 maxSyncs 로 끊고, 남은 구멍은 다음 실행이 이어서 채운다.
+export async function backfillMissingDates(options: { lookbackDays?: number; maxSyncs?: number } = {}) {
+  const lookbackDays = options.lookbackDays ?? 14;
+  const maxSyncs = options.maxSyncs ?? 20;
+
+  const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
+  if (accounts.length === 0) return { attempted: 0, filled: 0, failed: 0, remaining: 0 };
+
+  // KST 기준 어제부터 과거로 lookbackDays 일. 최신 날짜부터 메운다.
+  const nowKST = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const dates: string[] = [];
+  for (let i = 1; i <= lookbackDays; i++) {
+    const d = new Date(nowKST);
+    d.setDate(d.getDate() - i);
+    dates.push(d.toISOString().slice(0, 10));
+  }
+
+  // 이미 수집된 (계정, 날짜) 조합을 한 번에 읽어 둔다
+  const oldest = new Date(dates[dates.length - 1]);
+  const logs = await prisma.syncLog.findMany({
+    where: { date: { gte: oldest } },
+    select: { accountId: true, date: true, status: true },
+  });
+  const done = new Set(
+    logs
+      .filter((l) => l.status !== 'FAILED')
+      .map((l) => `${l.accountId}|${l.date.toISOString().slice(0, 10)}`)
+  );
+
+  // 계정을 연동하기 전 날짜는 채울 의무가 없다. 가드가 없으면 매일 밤 수집 예산을
+  // 연동 이전 날짜에 다 써버려서 정작 진짜 구멍이 안 메워진다.
+  const missing: { account: (typeof accounts)[number]; date: string }[] = [];
+  for (const date of dates) {
+    for (const account of accounts) {
+      const linkedFrom = account.createdAt.toISOString().slice(0, 10);
+      if (date < linkedFrom) continue;
+      if (!done.has(`${account.id}|${date}`)) missing.push({ account, date });
+    }
+  }
+
+  if (missing.length === 0) {
+    console.log(`[Backfill] 최근 ${lookbackDays}일 누락 없음`);
+    return { attempted: 0, filled: 0, failed: 0, remaining: 0 };
+  }
+
+  const target = missing.slice(0, maxSyncs);
+  console.log(`[Backfill] 누락 ${missing.length}건 발견 → 이번 실행에서 ${target.length}건 수집`);
+
+  let filled = 0;
+  let failed = 0;
+  for (const { account, date } of target) {
+    try {
+      const result = await syncAccountData(account, date);
+      if (result && 'error' in result && result.error) {
+        failed++;
+        await recordSyncFailure(account.id, date, String(result.error));
+        console.error(`[Backfill] 실패: ${account.accountName} ${date} - ${result.error}`);
+      } else {
+        filled++;
+        console.log(`[Backfill] 완료: ${account.accountName} ${date}`);
+      }
+    } catch (error) {
+      failed++;
+      const reason = error instanceof Error ? error.message : String(error);
+      await recordSyncFailure(account.id, date, reason).catch(() => {});
+      console.error(`[Backfill] 오류: ${account.accountName} ${date}`, error);
+    }
+  }
+
+  const remaining = missing.length - target.length;
+  console.log(`[Backfill] 종료 - 채움 ${filled}건, 실패 ${failed}건, 남은 누락 ${remaining}건`);
+  return { attempted: target.length, filled, failed, remaining };
+}
+
 // 서버 시작 시 어제 데이터가 수집 안 됐으면 즉시 수집 (Railway 슬립/재시작 대응)
 async function runDailySyncIfMissing() {
   // KST 기준 어제 날짜 계산
@@ -646,7 +711,9 @@ export function startScheduler() {
     console.log(`[Scheduler] 다음 수집: ${next.toLocaleString('ko-KR', { timeZone: 'Asia/Seoul' })} KST (${Math.round(delay / 1000 / 60)}분 후)`);
 
     setTimeout(() => {
-      runDailySync().catch(console.error);
+      runDailySync()
+        .then(() => backfillMissingDates({ lookbackDays: 30, maxSyncs: 20 }))
+        .catch(console.error);
       scheduleSync();
     }, delay);
   };

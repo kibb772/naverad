@@ -36,8 +36,12 @@ export async function POST(req: NextRequest) {
       cpc: (s._sum.clicks || 0) > 0 ? Math.round((s._sum.cost || 0) / (s._sum.clicks || 0)) : 0,
     }));
 
-    // 클릭 순 정렬, 상위 30개
     keywords.sort((a, b) => b.clicks - a.clicks);
+
+    // 화면에 내려보낼 최대 개수. 예전에는 30개만 내려보내면서 화면에는
+    // "더보기 (30개 전체)" 라고 띄워서, 실제로 키워드가 1,800종인 계정도
+    // 30종이 전부인 것처럼 보였다. 실제 총계는 totalKeywords 로 따로 내려준다.
+    const MAX_RETURNED = 500;
 
     // 캠페인유형별 합산 (DB 기준 - 차이 계산용)
     const campaignStats = await prisma.keywordDailyStat.groupBy({
@@ -69,11 +73,20 @@ export async function POST(req: NextRequest) {
     const csvRows = await prisma.keywordDailyStat.count({ where: { accountId, keywordId: { startsWith: 'csv-' } } });
     console.log(`[Keywords Cached] DB 확인: accountId=${accountId}, 전체=${totalRows}행, CSV=${csvRows}행`);
 
+    // 조회 기간 중 실제로 데이터가 있는 날짜 (SyncLog 가 아니라 실측)
+    const daysWithData = await prisma.keywordDailyStat.findMany({
+      where: { accountId, date: { gte: sinceDate, lte: untilDate } },
+      distinct: ['date'],
+      select: { date: true },
+    });
+
     return NextResponse.json({
-      keywords: keywords.slice(0, 30),
+      keywords: keywords.slice(0, MAX_RETURNED),
       totalKeywords: keywords.length,
+      truncated: keywords.length > MAX_RETURNED,
       campaignTotals,
       syncedDays: syncLogs.length,
+      daysWithData: daysWithData.length,
       lastSync: syncLogs[0]?.date || null,
       debug: { accountId, since: sinceDate.toISOString(), until: untilDate.toISOString() },
     });

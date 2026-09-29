@@ -1,16 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { NaverAdsService } from '@/services/naver-ads.service';
 import prisma from '@/lib/prisma';
-
-// 캠페인 유형 코드 → 한글 라벨
-function getCampaignTypeLabel(campType: string): string {
-  if (campType === 'WEB_SITE' || campType === '1') return '파워링크';
-  if (campType === 'SHOPPING' || campType === '2') return '쇼핑검색';
-  if (campType === 'POWER_CONTENTS' || campType === '3') return '파워컨텐츠';
-  if (campType === 'BRAND_SEARCH' || campType === '4') return '브랜드검색';
-  if (campType === 'PLACE' || campType === '6' || campType === '7') return '플레이스';
-  return campType || '';
-}
+import { getCampaignTypeLabel } from '@/lib/campaign-type';
 
 // StatReport 방식으로 수집
 async function syncViaStatReport(naverAds: NaverAdsService, accountId: string, customerId: string, syncDate: string): Promise<{ success: boolean; keywordCount: number } | null> {
