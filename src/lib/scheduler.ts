@@ -589,9 +589,10 @@ async function checkBizmoneyAndNotify() {
 // 그 탓에 대시보드에서 과거 기간을 보면 키워드 합계가 네이버 실시간 값보다 적게 나왔다.
 // 네이버 StatReport 는 100일 이전 날짜도 내주므로 뒤늦게라도 채울 수 있다.
 // 한 번에 몰아 돌면 API 부담이 크므로 maxSyncs 로 끊고, 남은 구멍은 다음 실행이 이어서 채운다.
-export async function backfillMissingDates(options: { lookbackDays?: number; maxSyncs?: number } = {}) {
+export async function backfillMissingDates(options: { lookbackDays?: number; maxSyncs?: number; maxDurationMs?: number } = {}) {
   const lookbackDays = options.lookbackDays ?? 14;
   const maxSyncs = options.maxSyncs ?? 20;
+  const maxDurationMs = options.maxDurationMs ?? 30 * 60 * 1000;
 
   const accounts = await prisma.naverAdsAccount.findMany({ where: { isActive: true } });
   if (accounts.length === 0) return { attempted: 0, filled: 0, failed: 0, remaining: 0 };
@@ -634,11 +635,22 @@ export async function backfillMissingDates(options: { lookbackDays?: number; max
   }
 
   const target = missing.slice(0, maxSyncs);
-  console.log(`[Backfill] 누락 ${missing.length}건 발견 → 이번 실행에서 ${target.length}건 수집`);
+  console.log(`[Backfill] 누락 ${missing.length}건 발견 → 이번 실행에서 최대 ${target.length}건 수집 (제한 ${Math.round(maxDurationMs / 60000)}분)`);
 
+  // 건수 외에 시간으로도 끊는다.
+  // 실패한 건은 다시 누락으로 잡혀 재시도되는데, 어떤 계정이 계속 실패하면
+  // (API 키 만료 등) 매일 밤 90일치를 붙잡고 늘어질 수 있다. 한 건이 느린 경로로
+  // 빠지면 몇 분씩 걸리기도 한다. 서버 비용이 예측 가능하도록 상한을 둔다.
+  const startedAt = Date.now();
   let filled = 0;
   let failed = 0;
-  for (const { account, date } of target) {
+  let stoppedEarly = 0;
+  for (const [idx, { account, date }] of target.entries()) {
+    if (Date.now() - startedAt > maxDurationMs) {
+      stoppedEarly = target.length - idx;
+      console.log(`[Backfill] 시간 제한 도달 - ${stoppedEarly}건은 다음 실행으로 넘김`);
+      break;
+    }
     try {
       const result = await syncAccountData(account, date);
       if (result && 'error' in result && result.error) {
