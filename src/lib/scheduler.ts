@@ -314,9 +314,24 @@ export async function syncAccountData(account: {
       statMap[key].cost += cost;
     }
 
+    // 지금은 없어진 캠페인의 과거 실적은 저장하지 않는다.
+    // 보고서(StatReport)에는 당시 존재하던 캠페인이 전부 들어있는데, 대시보드 상단
+    // KPI 는 살아있는 캠페인만 조회한다. 그대로 저장하면 키워드 표가 KPI 보다 많아진다.
+    // 캠페인을 갈아엎은 계정에서 실제로 42% 가 어긋났다.
+    //
+    // 단, 캠페인 목록 조회 자체가 실패했을 때는 걸러내면 안 된다.
+    // 그러면 멀쩡한 하루치가 통째로 0건이 되고, 수집은 '성공'으로 기록돼 아무도 모른다.
+    const knownCampaigns = new Set(
+      Object.keys(keywordMap).filter((k) => k.startsWith('camp-')).map((k) => k.slice(5))
+    );
+    if (knownCampaigns.size === 0) {
+      console.warn(`[Scheduler] ${account.customerId}: 캠페인 목록을 못 받아 삭제된 캠페인 필터를 건너뜀`);
+    }
+
     // 매핑 적용하여 rows 생성
     for (const [, stat] of Object.entries(statMap)) {
       if (stat.impressions === 0 && stat.clicks === 0 && stat.cost === 0) continue; // 성과 0인 행은 저장하지 않음
+      if (knownCampaigns.size > 0 && !knownCampaigns.has(stat.campId)) continue;
 
       const master = keywordMap[stat.kwId] || keywordMap[`camp-${stat.campId}`];
       const campaignTypeLabel = master?.campaignType || '';
