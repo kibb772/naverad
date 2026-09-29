@@ -6,6 +6,7 @@ import React, { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useAccounts, LinkedAccount } from '@/context/AccountContext';
 import { reconcileKeywordsWithLive } from '@/lib/keyword-reconcile';
+import BizmoneyTab from './BizmoneyTab';
 
 function getDemoDataForAccount(account: LinkedAccount) {
   // 계정별로 다른 데모 데이터 생성 (customerId 기반 시드)
@@ -79,7 +80,7 @@ function getDaysDiff(since: string, until: string): number {
 
 export default function DashboardPage() {
   const { accounts, selectedAccountId, setSelectedAccountId } = useAccounts();
-  const [activeTab, setActiveTab] = useState<'overview' | 'diagnosis' | 'report'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'bizmoney' | 'diagnosis' | 'report'>('overview');
   const [loading, setLoading] = useState(false);
   const [campaignData, setCampaignData] = useState<ReturnType<typeof getDemoDataForAccount> | null>(null);
   const [dataSource, setDataSource] = useState<'live' | 'demo'>('demo');
@@ -435,8 +436,8 @@ export default function DashboardPage() {
 
       {/* 탭 */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', borderBottom: '1px solid var(--border)', paddingBottom: '0.5rem' }}>
-        {([['overview', '📊 캠페인 현황']] as const).map(([key, label]) => (
-          <button key={key} onClick={() => setActiveTab(key as 'overview' | 'diagnosis' | 'report')} data-testid={`tab-${key}`}
+        {([['overview', '📊 캠페인 현황'], ['bizmoney', '💰 잔액 확인']] as const).map(([key, label]) => (
+          <button key={key} onClick={() => setActiveTab(key as 'overview' | 'bizmoney' | 'diagnosis' | 'report')} data-testid={`tab-${key}`}
             style={{ padding: '0.5rem 1rem', border: 'none', background: activeTab === key ? 'var(--primary)' : 'transparent', color: activeTab === key ? 'white' : 'var(--text-muted)', borderRadius: '0.375rem', cursor: 'pointer', fontWeight: 600, fontSize: '0.875rem' }}>
             {label}
           </button>
@@ -449,6 +450,9 @@ export default function DashboardPage() {
           <KeywordTopSection account={selectedAccount} dateRange={dateRange} campaigns={d.campaigns} />
         </>
       )}
+
+      {/* 잔액 탭은 선택한 계정과 무관하게 전체 계정을 보여준다 */}
+      {activeTab === 'bizmoney' && <BizmoneyTab />}
       </>
       )}
     </DashboardLayout>

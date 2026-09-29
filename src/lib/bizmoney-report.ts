@@ -21,13 +21,37 @@ interface AccountCredentials {
 
 const LOW_BALANCE_THRESHOLD = 10000;
 
-export async function collectBizmoneyResults(accounts: AccountCredentials[]): Promise<BizmoneyResult[]> {
-  const results: BizmoneyResult[] = [];
+/**
+ * 계정별 비즈머니 잔액을 모은다.
+ *
+ * 계정마다 잔액 + 충전이력 두 번을 호출하는데, 순서대로 돌면 18개 계정에 20초가 넘어
+ * 화면에서 기다리기 어렵다. 동시 실행 수를 제한해 병렬로 돌린다. 한도를 두는 건
+ * 네이버 API 레이트 리밋 때문이다. 결과 순서는 입력 순서를 유지한다.
+ */
+export async function collectBizmoneyResults(
+  accounts: AccountCredentials[],
+  concurrency = 5
+): Promise<BizmoneyResult[]> {
+  const results: BizmoneyResult[] = new Array(accounts.length);
+  let cursor = 0;
 
-  for (const account of accounts) {
-    const base = { accountName: account.accountName, customerId: account.customerId };
-    try {
-      const naverAds = new NaverAdsService({
+  const worker = async () => {
+    for (;;) {
+      const index = cursor++;
+      if (index >= accounts.length) return;
+      results[index] = await fetchOne(accounts[index]);
+    }
+  };
+
+  const workers = Array.from({ length: Math.min(concurrency, accounts.length) }, worker);
+  await Promise.all(workers);
+  return results;
+}
+
+async function fetchOne(account: AccountCredentials): Promise<BizmoneyResult> {
+  const base = { accountName: account.accountName, customerId: account.customerId };
+  try {
+    const naverAds = new NaverAdsService({
         apiKey: account.apiKey,
         secretKey: account.secretKey,
         customerId: account.customerId,
@@ -36,16 +60,14 @@ export async function collectBizmoneyResults(accounts: AccountCredentials[]): Pr
 
       if (!result.success || !result.data) {
         console.error(`[Bizmoney] ${account.accountName}: 조회 실패`, result.error);
-        results.push({ ...base, bizmoney: null, budgetLock: false, lastChargeDate: '', error: result.error });
-        continue;
+        return { ...base, bizmoney: null, budgetLock: false, lastChargeDate: '', error: result.error };
       }
 
       const data = result.data as Record<string, unknown>;
       const raw = data?.bizmoney ?? data?.balance ?? data?.amount;
       const bizmoney = Number(raw);
       if (raw === undefined || raw === null || !Number.isFinite(bizmoney)) {
-        results.push({ ...base, bizmoney: null, budgetLock: false, lastChargeDate: '', error: '잔액 필드 없음' });
-        continue;
+        return { ...base, bizmoney: null, budgetLock: false, lastChargeDate: '', error: '잔액 필드 없음' };
       }
 
       // 마지막 충전일 조회
@@ -63,21 +85,18 @@ export async function collectBizmoneyResults(accounts: AccountCredentials[]): Pr
         }
       } catch { /* 무시 */ }
 
-      results.push({ ...base, bizmoney, budgetLock: Boolean(data?.budgetLock), lastChargeDate });
-      console.log(`[Bizmoney] ${account.accountName}: ₩${Math.floor(bizmoney).toLocaleString()}, 마지막 충전: ${lastChargeDate || '없음'}`);
-    } catch (error) {
-      console.error(`[Bizmoney] ${account.accountName}: 조회 오류`, error);
-      results.push({
-        ...base,
-        bizmoney: null,
-        budgetLock: false,
-        lastChargeDate: '',
-        error: error instanceof Error ? error.message : '알 수 없는 오류',
-      });
-    }
+    console.log(`[Bizmoney] ${account.accountName}: ₩${Math.floor(bizmoney).toLocaleString()}, 마지막 충전: ${lastChargeDate || '없음'}`);
+    return { ...base, bizmoney, budgetLock: Boolean(data?.budgetLock), lastChargeDate };
+  } catch (error) {
+    console.error(`[Bizmoney] ${account.accountName}: 조회 오류`, error);
+    return {
+      ...base,
+      bizmoney: null,
+      budgetLock: false,
+      lastChargeDate: '',
+      error: error instanceof Error ? error.message : '알 수 없는 오류',
+    };
   }
-
-  return results;
 }
 
 function escapeHtml(value: string): string {
@@ -101,13 +120,22 @@ function balanceTable(rows: BizmoneyResult[], headerBg: string, highlight: boole
   return html;
 }
 
-export function buildBizmoneyReport(results: BizmoneyResult[]): { subject: string; html: string } {
+/**
+ * 잔액 부족 / 정상 / 조회 실패로 나눈다.
+ * 매일 가는 메일과 대시보드의 잔액 탭이 같은 기준을 쓰도록 여기서만 정의한다.
+ */
+export function classifyBizmoneyResults(results: BizmoneyResult[]) {
   const fetched = results.filter((r) => r.bizmoney !== null);
   const lowBalance = fetched
     .filter((r) => (r.bizmoney as number) <= LOW_BALANCE_THRESHOLD)
     .sort((a, b) => (a.bizmoney as number) - (b.bizmoney as number));
   const normal = fetched.filter((r) => (r.bizmoney as number) > LOW_BALANCE_THRESHOLD);
   const failed = results.filter((r) => r.bizmoney === null);
+  return { lowBalance, normal, failed, threshold: LOW_BALANCE_THRESHOLD };
+}
+
+export function buildBizmoneyReport(results: BizmoneyResult[]): { subject: string; html: string } {
+  const { lowBalance, normal, failed } = classifyBizmoneyResults(results);
 
   const today = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric' });
 
